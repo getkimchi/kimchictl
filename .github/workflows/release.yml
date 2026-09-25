@@ -1,0 +1,156 @@
+name: Release
+
+on:
+  push:
+    tags:
+      # Bare semver tags — same convention as kimchi-workflows.
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+env:
+  # bun version pinned to match local dev (package.json engines/setup).
+  BUN_VERSION: "1.4.0"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      sha_darwin_arm64: ${{ steps.shas.outputs.sha_darwin_arm64 }}
+      sha_darwin_x64: ${{ steps.shas.outputs.sha_darwin_x64 }}
+      sha_linux_arm64: ${{ steps.shas.outputs.sha_linux_arm64 }}
+      sha_linux_x64: ${{ steps.shas.outputs.sha_linux_x64 }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install toolchain deps
+        run: |
+          curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=10.8.1 sh -
+          echo "$HOME/.local/share/pnpm" >> "$GITHUB_PATH"
+      - name: Install & verify
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run check
+
+      - name: Stamp version from tag
+        run: sed -i 's/0\.0\.0-dev/${{ github.ref_name }}/' src/version.ts
+
+      - name: Compile binaries (cross-compile per target)
+        run: |
+          mkdir -p dist-bin
+          for spec in "bun-darwin-arm64 darwin-arm64" "bun-darwin-x64 darwin-x64" "bun-linux-arm64 linux-arm64" "bun-linux-x64 linux-x64"; do
+            set -- $spec
+            bun build --compile --minify --target="$1" src/cli.ts --outfile "dist-bin/kimchictl-$2"
+          done
+          (cd dist-bin && sha256sum kimchictl-* > checksums.txt)
+          ls -la dist-bin/
+
+      - name: Capture asset checksums
+        id: shas
+        run: |
+          cd dist-bin
+          for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+            key="sha_${platform//-/_}"
+            echo "${key}=$(sha256sum "kimchictl-${platform}" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-bin/*
+          generate_release_notes: true
+
+  npm:
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          cache: pnpm
+
+      - name: "Guard: npm token configured"
+        id: token_guard
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::NPM_TOKEN secret is not configured — skipping npm publish. Add the org secret to enable it."
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish npm package
+        if: steps.token_guard.outputs.has_token == 'true'
+        run: |
+          npm pkg set version="${{ github.ref_name }}"
+          sed -i 's/0\.0\.0-dev/${{ github.ref_name }}/' src/version.ts
+          pnpm install --frozen-lockfile
+          pnpm run check
+          pnpm run build
+          npm publish --access public
+
+  homebrew-tap:
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+    steps:
+      - name: "Guard: tap token configured"
+        id: token_guard
+        run: |
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::TAP_GITHUB_TOKEN secret is not configured — skipping Homebrew tap bump. Configure a PAT/GitHub App token with write access to getkimchi/homebrew-tap."
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.token_guard.outputs.has_token == 'true'
+      - name: Render formula
+        if: steps.token_guard.outputs.has_token == 'true'
+        env:
+          VERSION: ${{ github.ref_name }}
+          SHA_DARWIN_ARM64: ${{ needs.release.outputs.sha_darwin_arm64 }}
+          SHA_DARWIN_X64: ${{ needs.release.outputs.sha_darwin_x64 }}
+          SHA_LINUX_ARM64: ${{ needs.release.outputs.sha_linux_arm64 }}
+          SHA_LINUX_X64: ${{ needs.release.outputs.sha_linux_x64 }}
+        run: |
+          sed \
+            -e "s/@VERSION@/${VERSION}/" \
+            -e "s/@SHA_DARWIN_ARM64@/${SHA_DARWIN_ARM64}/" \
+            -e "s/@SHA_DARWIN_X64@/${SHA_DARWIN_X64}/" \
+            -e "s/@SHA_LINUX_ARM64@/${SHA_LINUX_ARM64}/" \
+            -e "s/@SHA_LINUX_X64@/${SHA_LINUX_X64}/" \
+            scripts/homebrew/kimchictl.rb > Formula.tmp
+          if grep -q '@[A-Z_]*@' Formula.tmp; then
+            echo "::error::unreplaced placeholders remain in formula"; exit 1
+          fi
+          mv Formula.tmp Formula.out
+      - name: Push formula to getkimchi/homebrew-tap
+        if: steps.token_guard.outputs.has_token == 'true'
+        run: |
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/getkimchi/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          mv Formula.out tap/Formula/kimchictl.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/kimchictl.rb
+          if git diff --staged --quiet; then
+            echo "Formula already at ${{ github.ref_name }} — nothing to do."
+          else
+            git commit -m "kimchictl ${{ github.ref_name }}"
+            git push
+          fi
