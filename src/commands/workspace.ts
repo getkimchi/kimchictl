@@ -1,6 +1,6 @@
 import { formatAge, formatBytes, formatMillicores } from "../api/resources.js"
 import { resolveTemplate } from "../api/templates.js"
-import { RemoteAuthError } from "../api/types.js"
+import { waitForWorkspaceActive } from "../api/wait.js"
 import { createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, type Workspace } from "../api/workspaces.js"
 import { requireApiKey } from "../auth/resolve.js"
 import { parseFlags, UsageError } from "./flags.js"
@@ -95,20 +95,12 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 	let current = created
 	if (!values["no-wait"]) {
 		// kap's create poll: 2s cadence, deadline, progress on stderr.
-		const start = Date.now()
-		const deadline = start + timeoutSeconds * 1000
-		while (Date.now() < deadline) {
-			await sleep(2000)
-			const elapsed = Math.round((Date.now() - start) / 1000)
-			process.stderr.write(`\r  waiting… ${elapsed}s`)
-			try {
-				current = await getWorkspace(key, created.id, { fetch: deps.fetch })
-			} catch (err) {
-				if (err instanceof RemoteAuthError) throw err
-				continue // workspace still registering with the control plane — poll until the deadline
-			}
-			if (current.status === "active") break
-		}
+		current = await waitForWorkspaceActive(key, created.id, {
+			fetch: deps.fetch,
+			timeoutMs: timeoutSeconds * 1000,
+			sleep,
+			onTick: (elapsedSeconds) => process.stderr.write(`\r  waiting… ${elapsedSeconds}s`),
+		})
 		process.stderr.write("\n")
 		if (current.status !== "active") {
 			console.error(`  ⚠ workspace still initializing — check with: kimchictl workspace get ${created.alias}`)

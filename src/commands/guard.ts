@@ -2,6 +2,7 @@ import { TemplatesUnavailableError } from "../api/templates.js"
 import { RemoteAuthError, RemoteNetworkError } from "../api/types.js"
 import { ModelsFetchError } from "../auth/models-providers.js"
 import { NotLoggedInError } from "../auth/resolve.js"
+import { BridgeError } from "../ssh/bridge.js"
 import { UsageError } from "./flags.js"
 
 /**
@@ -27,6 +28,7 @@ export function guardCommand<TDeps>(
 				err instanceof NotLoggedInError ||
 				err instanceof ModelsFetchError ||
 				err instanceof TemplatesUnavailableError ||
+				err instanceof BridgeError ||
 				err instanceof RemoteAuthError ||
 				err instanceof RemoteNetworkError
 			) {

@@ -39,7 +39,9 @@ export function writeApiKeyToConfig(configPath: string, apiKey: string | undefin
 	const raw = readConfigRaw(configPath)
 	if (apiKey === undefined) {
 		if (raw.apiKey === undefined) return
-		delete raw.apiKey
+		// undefined-assignment instead of delete: the file is immediately
+		// JSON.stringify'd, which drops undefined properties the same way.
+		raw.apiKey = undefined
 	} else {
 		raw.apiKey = apiKey
 	}
