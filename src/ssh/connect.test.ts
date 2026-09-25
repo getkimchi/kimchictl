@@ -18,38 +18,45 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-const WS = {
-	id: "ws-1",
-	description: "",
-	status: "ACTIVE",
-	createTime: "2026-01-01T12:00:00Z",
-	uri: "ws-1.remote.kimchi.dev",
-	spec: { resources: { cpu: "500m", memory: "1Gi" } },
+const UUID = "3d3dc322-dd05-4d0c-adab-beb2a0819e69"
+
+function wsJson(status: string): Record<string, unknown> {
+	return {
+		id: UUID,
+		description: "",
+		status,
+		createTime: "2026-01-01T12:00:00Z",
+		uri: "ws-1.remote.kimchi.dev",
+		spec: { resources: { cpu: "500m", memory: "1Gi" } },
+	}
 }
 
 function makeFetch(options?: { suspendedFirst?: boolean }): { fetch: typeof globalThis.fetch; calls: string[] } {
 	const calls: string[] = []
 	let resumed = false
 	const suspendedFirst = options?.suspendedFirst === true
-	const fetch = stubFetch(async (url, init) => {
+	const fetch = stubFetch(async (url) => {
 		calls.push(url)
 		if (url.endsWith("/workspace-tokens:verifyKey")) return jsonResponse({ organizationId: "org-1" })
-		if (url.endsWith("/workspaces/ws-1:resume")) {
+		if (url.includes("?page.limit=")) {
+			// The list snapshot decides the initial status.
+			return jsonResponse({ items: [wsJson(suspendedFirst && !resumed ? "SUSPENDED" : "ACTIVE")] })
+		}
+		if (url.endsWith(`/${UUID}`)) {
+			// Read-through polls (post-resume wait) see the current state.
+			return jsonResponse(wsJson(resumed || !suspendedFirst ? "ACTIVE" : "SUSPENDED"))
+		}
+		if (url.endsWith(`/${UUID}:resume`)) {
 			resumed = true
 			return jsonResponse({})
 		}
-		if (url.endsWith("/workspaces/ws-1")) {
-			const active = !suspendedFirst || resumed
-			return jsonResponse({ ...WS, status: active ? "ACTIVE" : "SUSPENDED" })
-		}
-		void init
 		throw new Error(`unexpected request: ${url}`)
 	})
-	return { fetch: fetch as typeof globalThis.fetch, calls }
+	return { fetch, calls }
 }
 
 describe("connectToWorkspace", () => {
-	it("execs ssh to <name>.<domain> with the remote command, no resume when ACTIVE", async () => {
+	it("execs ssh to <alias>.<domain> with the remote command, no resume when ACTIVE", async () => {
 		const { fetch, calls } = makeFetch()
 		const execArgs: string[][] = []
 
@@ -64,6 +71,21 @@ describe("connectToWorkspace", () => {
 		expect(code).toBe(0)
 		expect(execArgs).toEqual([["ssh", "ws-1.remote.kimchi.dev", "uptime"]])
 		expect(calls.some((c) => c.endsWith(":resume"))).toBe(false)
+	})
+
+	it("accepts a full hostname and still connects by alias", async () => {
+		const { fetch } = makeFetch()
+		const execArgs: string[][] = []
+
+		await connectToWorkspace("ws-1.remote.kimchi.dev", [], {
+			fetch,
+			exec: (args) => {
+				execArgs.push(args)
+				return 0
+			},
+		})
+
+		expect(execArgs).toEqual([["ssh", "ws-1.remote.kimchi.dev"]])
 	})
 
 	it("auto-configures SSH integration on first use", async () => {

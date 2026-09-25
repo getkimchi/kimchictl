@@ -1,7 +1,8 @@
+import { resolveWorkspace } from "../api/resolver.js"
 import { formatAge, formatBytes, formatMillicores } from "../api/resources.js"
 import { resolveTemplate } from "../api/templates.js"
 import { waitForWorkspaceActive } from "../api/wait.js"
-import { createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, type Workspace } from "../api/workspaces.js"
+import { createWorkspace, deleteWorkspace, listWorkspaces, type Workspace } from "../api/workspaces.js"
 import { requireApiKey } from "../auth/resolve.js"
 import { parseFlags, UsageError } from "./flags.js"
 import { confirm, isInteractive } from "./prompt.js"
@@ -173,7 +174,8 @@ async function runGet(args: string[], deps: WorkspaceDeps): Promise<number> {
 	}
 
 	const { key } = requireApiKey(deps.env)
-	const workspace = await getWorkspace(key, positionals[0] ?? "", { fetch: deps.fetch })
+	// Accepts a UUID, full alias, or alias prefix (see api/resolver.ts).
+	const workspace = await resolveWorkspace(key, positionals[0] ?? "", { fetch: deps.fetch })
 
 	if (values.output === "json") {
 		console.log(JSON.stringify(serializeWorkspace(workspace), null, 2))
@@ -203,17 +205,20 @@ async function runDelete(args: string[], deps: WorkspaceDeps): Promise<number> {
 	if (positionals.length !== 1) {
 		throw new UsageError("kimchictl workspace delete: expected exactly one workspace name")
 	}
-	const id = positionals[0] ?? ""
+	const ref = positionals[0] ?? ""
 
 	const { key } = requireApiKey(deps.env)
+	// Resolve before prompting so the confirmation names the real target and
+	// typos fail fast instead of after the user answered the prompt.
+	const workspace = await resolveWorkspace(key, ref, { fetch: deps.fetch })
 
 	if (!values.force) {
 		const interactive = deps.interactive ?? isInteractive()
-		const question = `Delete workspace "${id}"? [y/N] `
+		const question = `Delete workspace "${workspace.alias}"? [y/N] `
 		const ok = await (deps.confirm ? deps.confirm(question) : interactive ? confirm(question) : false)
 		if (!ok) {
 			if (!deps.confirm && !interactive) {
-				console.error(`kimchictl workspace delete: not interactive — re-run with --force to delete ${id}`)
+				console.error(`kimchictl workspace delete: not interactive — re-run with --force to delete ${workspace.alias}`)
 				return 1
 			}
 			console.log("Aborted.")
@@ -221,8 +226,8 @@ async function runDelete(args: string[], deps: WorkspaceDeps): Promise<number> {
 		}
 	}
 
-	await deleteWorkspace(key, id, { fetch: deps.fetch })
-	console.log(`✓ deleted ${id}`)
+	await deleteWorkspace(key, workspace.id, { fetch: deps.fetch })
+	console.log(`✓ deleted ${workspace.alias}`)
 	return 0
 }
 

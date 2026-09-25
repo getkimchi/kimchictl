@@ -1,13 +1,12 @@
 import { verifyApiKey } from "../api/keys.js"
+import { resolveWorkspace } from "../api/resolver.js"
 import { exchangeWorkspaceToken, resumeWorkspace } from "../api/tokens.js"
 import type { ApiOptions } from "../api/types.js"
 import { RemoteNetworkError } from "../api/types.js"
-import { getWorkspace } from "../api/workspaces.js"
 
 /**
  * Tunnel resolution for the SSH bridge (TS port of kap's
- * internal/ssh/bridge.go ResolveTunnel, simplified: alias == id, no resolver
- * round-trip).
+ * internal/ssh/bridge.go ResolveTunnel — refs resolve via api/resolver.ts).
  */
 
 export interface TunnelCreds {
@@ -45,12 +44,12 @@ export async function resolveTunnel(
 	wsRef: string,
 	options?: ResolveTunnelOptions,
 ): Promise<TunnelCreds> {
-	const id = workspaceIdFromRef(wsRef)
-	const workspace = await getWorkspace(apiKey, id, options)
+	const ref = workspaceIdFromRef(wsRef)
+	const workspace = await resolveWorkspace(apiKey, ref, options)
 	if (!workspace.uri) {
-		throw new RemoteNetworkError(`Workspace ${id} has no connection URI yet — it may still be provisioning`)
+		throw new RemoteNetworkError(`Workspace ${ref} has no connection URI yet — it may still be provisioning`)
 	}
-	const { token } = await exchangeWorkspaceToken(apiKey, id, options)
+	const { token } = await exchangeWorkspaceToken(apiKey, workspace.id, options)
 	return { wsUrl: buildWsUrl(workspace.uri, options?.port), token }
 }
 

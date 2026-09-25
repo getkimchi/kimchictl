@@ -8,8 +8,8 @@ import { RemoteAuthError, RemoteNetworkError } from "./types.js"
  * Workspace client — mirrors the harness's (kimchi-dev:src/sandbox/cloud)
  * calls against the same control-plane API, plus kap's server-named create.
  *
- * Workspaces are addressed by their id, which is also the first DNS label of
- * the workspace URI (the "alias" users type, e.g. `bright-oak-otter`).
+ * The control plane addresses workspaces by UUID id; users type the alias
+ * (first DNS label of the URI). api/resolver.ts maps between them.
  */
 
 const HARNESS_CLIENT_TYPE = "harness" // matches kimchi-dev:src/sandbox/constants.ts
@@ -21,7 +21,7 @@ export type WorkspaceStatus = "active" | "initializing" | "suspended" | "deletin
 export interface Workspace {
 	/** Server id — also the command-line identifier (`workspace get <id>`, `ssh <id>`). */
 	id: string
-	/** First DNS label of the URI (usually equal to id; kept for display). */
+	/** First DNS label of the URI — the user-facing name (NOT the server id). */
 	alias: string
 	description: string
 	status: WorkspaceStatus

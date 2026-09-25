@@ -1,3 +1,4 @@
+import { AmbiguousWorkspaceError, WorkspaceNotFoundError } from "../api/resolver.js"
 import { TemplatesUnavailableError } from "../api/templates.js"
 import { RemoteAuthError, RemoteNetworkError } from "../api/types.js"
 import { ModelsFetchError } from "../auth/models-providers.js"
@@ -28,6 +29,8 @@ export function guardCommand<TDeps>(
 				err instanceof NotLoggedInError ||
 				err instanceof ModelsFetchError ||
 				err instanceof TemplatesUnavailableError ||
+				err instanceof WorkspaceNotFoundError ||
+				err instanceof AmbiguousWorkspaceError ||
 				err instanceof BridgeError ||
 				err instanceof RemoteAuthError ||
 				err instanceof RemoteNetworkError

@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process"
+import { resolveWorkspace } from "../api/resolver.js"
 import type { ApiOptions } from "../api/types.js"
 import { waitForWorkspaceActive } from "../api/wait.js"
-import { getWorkspace } from "../api/workspaces.js"
 import { requireApiKey } from "../auth/resolve.js"
 import {
 	isSshIntegrationConfigured,
@@ -10,7 +10,7 @@ import {
 	resolveSshPaths,
 	setupSshIntegration,
 } from "./config.js"
-import { resumeForConnect } from "./tunnel.js"
+import { resumeForConnect, workspaceIdFromRef } from "./tunnel.js"
 
 /** Post-resume wait budget for a hibernated workspace to reach ACTIVE. */
 const RESUME_WAIT_TIMEOUT_MS = 90_000
@@ -69,13 +69,15 @@ export async function connectToWorkspace(
 
 	const { key } = requireApiKey(env)
 
-	let workspace = await getWorkspace(key, name, options)
+	// Accepts "<alias>", "<alias>.<domain>", a UUID, or an alias prefix.
+	const ref = workspaceIdFromRef(name)
+	let workspace = await resolveWorkspace(key, ref, options)
 	if (workspace.status === "suspended" || workspace.status === "initializing") {
 		if (workspace.status === "suspended") {
-			await resumeForConnect(key, name, options)
+			await resumeForConnect(key, workspace.id, options)
 		}
 		process.stderr.write("  resuming…")
-		workspace = await waitForWorkspaceActive(key, name, {
+		workspace = await waitForWorkspaceActive(key, workspace.id, {
 			...options,
 			timeoutMs: RESUME_WAIT_TIMEOUT_MS,
 			sleep: options.sleep,
@@ -85,12 +87,12 @@ export async function connectToWorkspace(
 		if (workspace.status !== "active") {
 			process.stderr.write(
 				`  ⚠ workspace is ${workspace.status} — connecting anyway; ` +
-					`if it fails, retry in a minute or check: kimchictl workspace get ${name}\n`,
+					`if it fails, retry in a minute or check: kimchictl workspace get ${workspace.alias}\n`,
 			)
 		}
 	}
 
 	const domain = resolveSshDomain(undefined, env)
-	const host = `${name}.${domain}`
+	const host = `${workspace.alias}.${domain}`
 	return (options.exec ?? defaultExec)(["ssh", host, ...remoteCommand])
 }

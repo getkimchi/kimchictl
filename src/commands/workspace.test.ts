@@ -24,16 +24,17 @@ afterEach(() => {
 
 interface WorkspaceOverrides extends Record<string, unknown> {
 	id?: string
+	alias?: string
 }
 
 function wsJson(over: WorkspaceOverrides = {}): Record<string, unknown> {
-	const id = over.id ?? "bright-oak-otter"
+	const alias = over.alias ?? "bright-oak-otter"
 	return {
-		id,
+		id: over.id ?? "11111111-2222-3333-4444-555555555555",
 		description: "api work",
 		status: "ACTIVE",
 		createTime: "2026-01-01T00:00:00Z",
-		uri: `${id}.remote.kimchi.dev`,
+		uri: `${alias}.remote.kimchi.dev`,
 		spec: { resources: { cpu: "2", memory: "4Gi", pvcSize: "20Gi" } },
 		...over,
 	}
@@ -119,7 +120,7 @@ describe("kimchictl workspace create", () => {
 			},
 			{
 				method: "GET",
-				match: /\/workspaces\/bright-oak-otter$/,
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
 				respond: (call) => jsonResponse(wsJson({ status: call >= 2 ? "ACTIVE" : "INITIALIZING" })),
 			},
 		])
@@ -150,7 +151,11 @@ describe("kimchictl workspace create", () => {
 	it("warns when the workspace is not ACTIVE at the deadline", async () => {
 		const fetch = apiFetch([
 			{ method: "POST", match: /workspaces$/, respond: () => jsonResponse(wsJson({ status: "INITIALIZING" })) },
-			{ method: "GET", match: /bright-oak-otter$/, respond: () => jsonResponse(wsJson({ status: "INITIALIZING" })) },
+			{
+				method: "GET",
+				match: /11111111-2222-3333-4444-555555555555$/,
+				respond: () => jsonResponse(wsJson({ status: "INITIALIZING" })),
+			},
 		])
 
 		// deadline 1s, sleep override advances nothing — the loop exits when Date.now() passes the deadline…
@@ -202,9 +207,9 @@ describe("kimchictl workspace list", () => {
 				respond: () =>
 					jsonResponse({
 						items: [
-							wsJson({ id: "bright-oak-otter" }),
+							wsJson(),
 							wsJson({
-								id: "demo",
+								alias: "demo",
 								description: "",
 								status: "SUSPENDED",
 								createTime: "2025-12-30T00:00:00Z",
@@ -247,7 +252,7 @@ describe("kimchictl workspace list", () => {
 describe("kimchictl workspace get", () => {
 	it("renders the detail view", async () => {
 		const fetch = apiFetch([
-			{ method: "GET", match: /\/workspaces\/bright-oak-otter$/, respond: () => jsonResponse(wsJson()) },
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
 		])
 
 		const { code, lines } = await run(["get", "bright-oak-otter"], fetch)
@@ -267,13 +272,28 @@ describe("kimchictl workspace get", () => {
 
 	it("reports a missing workspace via the guard", async () => {
 		const fetch = apiFetch([
-			{ method: "GET", match: /\/workspaces\/ghost$/, respond: () => new Response("not found", { status: 404 }) },
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
 		])
 
 		const { code, errors } = await run(["get", "ghost"], fetch)
 
 		expect(code).toBe(1)
-		expect(errors[0]).toMatch(/Workspace not found/)
+		expect(errors[0]).toMatch(/No workspace matches "ghost"/)
+	})
+
+	it("resolves a UUID ref without listing", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
+				respond: () => jsonResponse(wsJson()),
+			},
+		])
+
+		const { code, lines } = await run(["get", "11111111-2222-3333-4444-555555555555"], fetch)
+
+		expect(code).toBe(0)
+		expect(lines[0]).toBe("name:        bright-oak-otter")
 	})
 
 	it("requires exactly one name", async () => {
@@ -287,9 +307,10 @@ describe("kimchictl workspace get", () => {
 describe("kimchictl workspace delete", () => {
 	it("deletes after an affirmative confirmation", async () => {
 		const fetch = apiFetch([
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
 			{
 				method: "DELETE",
-				match: /\/workspaces\/bright-oak-otter$/,
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
 				respond: () => new Response(null, { status: 200 }),
 			},
 		])
@@ -302,7 +323,12 @@ describe("kimchictl workspace delete", () => {
 
 	it("--force deletes without prompting", async () => {
 		const fetch = apiFetch([
-			{ method: "DELETE", match: /bright-oak-otter$/, respond: () => new Response(null, { status: 200 }) },
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
+			{
+				method: "DELETE",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
+				respond: () => new Response(null, { status: 200 }),
+			},
 		])
 
 		const { code } = await run(["delete", "--force", "bright-oak-otter"], fetch)
@@ -310,7 +336,11 @@ describe("kimchictl workspace delete", () => {
 	})
 
 	it("declined confirmation deletes nothing (no DELETE request)", async () => {
-		const fetch = apiFetch([]) // any DELETE would throw "unexpected request"
+		// Resolution still runs (it names the target in the prompt) — only the
+		// DELETE must not happen: any DELETE route would throw "unexpected request".
+		const fetch = apiFetch([
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
+		])
 
 		const { code, lines } = await run(["delete", "bright-oak-otter"], fetch, { confirm: async () => false })
 
@@ -319,7 +349,10 @@ describe("kimchictl workspace delete", () => {
 	})
 
 	it("requires --force when non-interactive", async () => {
-		const { code, errors } = await run(["delete", "bright-oak-otter"], apiFetch([]), { interactive: false })
+		const fetch = apiFetch([
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
+		])
+		const { code, errors } = await run(["delete", "bright-oak-otter"], fetch, { interactive: false })
 
 		expect(code).toBe(1)
 		expect(errors.some((l) => l.includes("--force"))).toBe(true)
