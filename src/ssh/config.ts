@@ -78,6 +78,12 @@ export function resolveProxyCommandTarget(execPath: string = process.execPath, e
 	if (base === "kimchictl" || base.startsWith("kimchictl-")) {
 		return shellQuote(execPath)
 	}
+	// Running inside the kimchi harness (installed via `kimchi install npm:…`):
+	// the ProxyCommand routes through the harness binary, which dispatches
+	// `ssh proxy` to this package's exported runner.
+	if (base === "kimchi" || base.startsWith("kimchi-")) {
+		return shellQuote(execPath)
+	}
 	const entry = entryScript ?? process.argv[1]
 	if (entry) {
 		return `${shellQuote(execPath)} ${shellQuote(resolve(entry))}`

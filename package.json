@@ -37,6 +37,13 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"//kimchi": "Subcommands the harness gains when this package is installed via `kimchi install` — kimchi-dev:src/commands/package-commands.ts reads this map and lazily imports each module (which must export run(args) => Promise<number>, pointing at runnable JS, i.e. dist/).",
+	"kimchi": {
+		"commands": {
+			"workspace": "./dist/commands/workspace.js",
+			"ssh": "./dist/commands/ssh.js"
+		}
+	},
 	"exports": {
 		".": {
 			"types": "./dist/run.d.ts",
@@ -49,6 +56,10 @@
 		"./commands/guard": {
 			"types": "./dist/commands/guard.d.ts",
 			"default": "./dist/commands/guard.js"
+		},
+		"./commands/ssh": {
+			"types": "./dist/commands/ssh.d.ts",
+			"default": "./dist/commands/ssh.js"
 		}
 	},
 	"scripts": {

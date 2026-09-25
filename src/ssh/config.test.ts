@@ -178,6 +178,11 @@ describe("resolveProxyCommandTarget", () => {
 		expect(resolveProxyCommandTarget("/opt/kimchictl-v1.2.3")).toBe("/opt/kimchictl-v1.2.3")
 	})
 
+	it("pins the kimchi harness binary when running as an installed package", () => {
+		expect(resolveProxyCommandTarget("/usr/local/bin/kimchi")).toBe("/usr/local/bin/kimchi")
+		expect(resolveProxyCommandTarget("/opt/kimchi-1.2.3")).toBe("/opt/kimchi-1.2.3")
+	})
+
 	it("pins the runtime + absolute entry script under node/bun (no PATH reliance)", () => {
 		expect(resolveProxyCommandTarget("/usr/local/bin/node", "/opt/app/dist/cli.js")).toBe(
 			"/usr/local/bin/node /opt/app/dist/cli.js",
