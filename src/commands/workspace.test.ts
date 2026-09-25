@@ -35,6 +35,8 @@ function wsJson(over: WorkspaceOverrides = {}): Record<string, unknown> {
 		status: "ACTIVE",
 		createTime: "2026-01-01T00:00:00Z",
 		uri: `${alias}.remote.kimchi.dev`,
+		cluster: "krep-us",
+		clientType: "harness",
 		spec: { resources: { cpu: "2", memory: "4Gi", pvcSize: "20Gi" } },
 		...over,
 	}
@@ -78,7 +80,7 @@ async function run(
 	stubAgentDirEnv(dir)
 	writeFileSync(join(dir, "auth.json"), JSON.stringify({ "kimchi-dev": { type: "api_key", key: "key" } }))
 	const { lines, errors } = captureConsole()
-	const code = await guardedWorkspace(args, { fetch, ...deps })
+	const code = await guardedWorkspace(args, { color: false, fetch, ...deps })
 	return { code, lines, errors }
 }
 
@@ -128,9 +130,16 @@ describe("kimchictl workspace create", () => {
 		const { code, lines, errors } = await run(["create", "--desc", "api work"], fetch, { sleep: async () => {} })
 
 		expect(code).toBe(0)
-		expect(lines).toEqual(["bright-oak-otter"])
-		expect(errors[0]).toBe("✓ created bright-oak-otter (initializing)")
-		expect(errors.some((l) => l.includes("uri  bright-oak-otter.remote.kimchi.dev"))).toBe(true)
+		expect(lines).toEqual([
+			"✓ created bright-oak-otter (initializing)",
+			"",
+			"  Connect:",
+			"    $ ssh bright-oak-otter.remote.kimchi.dev",
+			"    $ https://bright-oak-otter.remote.kimchi.dev/public/ide/",
+			"",
+			"bright-oak-otter",
+		])
+		expect(errors).toEqual([])
 	})
 
 	it("--no-wait returns immediately after create", async () => {
@@ -145,7 +154,15 @@ describe("kimchictl workspace create", () => {
 		const { code, lines } = await run(["create", "--no-wait"], fetch)
 
 		expect(code).toBe(0)
-		expect(lines).toEqual(["bright-oak-otter"])
+		expect(lines).toEqual([
+			"✓ created bright-oak-otter (initializing)",
+			"",
+			"  Connect:",
+			"    $ ssh bright-oak-otter.remote.kimchi.dev",
+			"    $ https://bright-oak-otter.remote.kimchi.dev/public/ide/",
+			"",
+			"bright-oak-otter",
+		])
 	})
 
 	it("warns when the workspace is not ACTIVE at the deadline", async () => {
@@ -166,7 +183,7 @@ describe("kimchictl workspace create", () => {
 		const realNow = Date.now
 		vi.spyOn(Date, "now").mockImplementation(() => now)
 
-		const { code, errors } = await run(["create", "--timeout", "1"], fetch, {
+		const { code, lines, errors } = await run(["create", "--timeout", "1"], fetch, {
 			sleep: async () => {
 				now += 2000
 			},
@@ -175,6 +192,8 @@ describe("kimchictl workspace create", () => {
 
 		expect(code).toBe(0)
 		expect(errors.some((l) => l.includes("still initializing"))).toBe(true)
+		// The alias is still the last stdout line for scripting.
+		expect(lines[lines.length - 1]).toBe("bright-oak-otter")
 	})
 
 	it("--template errors gracefully until the templates API lands", async () => {
@@ -225,9 +244,11 @@ describe("kimchictl workspace list", () => {
 		expect(code).toBe(0)
 		// formatTable prints the whole table as one console call.
 		const table = lines[0]?.split("\n") ?? []
-		expect(table[0]).toBe("NAME              STATUS     CPU  MEMORY  AGE")
-		expect(table[1]).toMatch(/^bright-oak-otter\s+active\s+2\s+4Gi\s+3h$/)
-		expect(table[2]).toMatch(/^demo\s+suspended\s+-\s+-\s+2d$/)
+		expect(table[0]).toMatch(/^NAME\s+STATUS\s+CLUSTER\s+AGE\s+CPU\s+RAM\s+PVC\s+URI$/)
+		expect(table[1]).toMatch(
+			/^bright-oak-otter\s+active\s+krep-us\s+3h\s+2\s+4Gi\s+20Gi\s+bright-oak-otter\.remote\.kimchi\.dev$/,
+		)
+		expect(table[2]).toMatch(/^demo\s+suspended\s+krep-us\s+2d\s+-\s+-\s+-\s+demo\.remote\.kimchi\.dev$/)
 		expect(table).toHaveLength(3)
 	})
 
@@ -238,7 +259,7 @@ describe("kimchictl workspace list", () => {
 		expect(JSON.parse(jsonRun.lines.join(""))).toEqual([])
 
 		const tableRun = await run(["list"], fetch)
-		expect(tableRun.lines).toEqual(["NAME  STATUS  CPU  MEMORY  AGE"])
+		expect(tableRun.lines).toEqual(["NAME  STATUS  CLUSTER  AGE  CPU  RAM  PVC  URI"])
 	})
 
 	it("rejects an unsupported output flavor", async () => {
@@ -255,18 +276,20 @@ describe("kimchictl workspace get", () => {
 			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
 		])
 
-		const { code, lines } = await run(["get", "bright-oak-otter"], fetch)
+		const { code, lines } = await run(["get", "bright-oak-otter"], fetch, {
+			now: () => new Date("2026-01-01T03:00:00Z"),
+		})
 
 		expect(code).toBe(0)
 		expect(lines).toEqual([
-			"name:        bright-oak-otter",
-			"description: api work",
-			"status:      active",
-			"uri:         bright-oak-otter.remote.kimchi.dev",
-			"created:     2026-01-01T00:00:00.000Z",
-			"cpu:         2",
-			"memory:      4Gi",
-			"storage:     20Gi",
+			"bright-oak-otter  ● active",
+			"  api work",
+			"  cluster krep-us · harness · created 3h ago",
+			"  2 CPU · 4Gi memory · 20Gi storage",
+			"",
+			"  Connect:",
+			"    $ ssh bright-oak-otter.remote.kimchi.dev",
+			"    $ https://bright-oak-otter.remote.kimchi.dev/public/ide/",
 		])
 	})
 
@@ -290,10 +313,27 @@ describe("kimchictl workspace get", () => {
 			},
 		])
 
-		const { code, lines } = await run(["get", "11111111-2222-3333-4444-555555555555"], fetch)
+		const { code, lines } = await run(["get", "11111111-2222-3333-4444-555555555555"], fetch, {
+			now: () => new Date("2026-01-01T03:00:00Z"),
+		})
 
 		expect(code).toBe(0)
-		expect(lines[0]).toBe("name:        bright-oak-otter")
+		expect(lines[0]).toBe("bright-oak-otter  ● active")
+	})
+
+	it("colorizes the status dot and metadata when colors are on", async () => {
+		const fetch = apiFetch([
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
+		])
+
+		const { lines } = await run(["get", "bright-oak-otter"], fetch, {
+			color: true,
+			now: () => new Date("2026-01-01T03:00:00Z"),
+		})
+
+		const joined = lines.join("\n")
+		expect(joined).toContain("\x1b[32m● active\x1b[0m")
+		expect(joined).toContain("\x1b[2m  cluster krep-us")
 	})
 
 	it("requires exactly one name", async () => {

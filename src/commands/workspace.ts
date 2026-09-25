@@ -4,6 +4,7 @@ import { resolveTemplate } from "../api/templates.js"
 import { waitForWorkspaceActive } from "../api/wait.js"
 import { createWorkspace, deleteWorkspace, listWorkspaces, type Workspace } from "../api/workspaces.js"
 import { requireApiKey } from "../auth/resolve.js"
+import { resolveSshDomain } from "../ssh/config.js"
 import { parseFlags, UsageError } from "./flags.js"
 import { confirm, isInteractive } from "./prompt.js"
 import { formatTable } from "./table.js"
@@ -19,6 +20,8 @@ export interface WorkspaceDeps {
 	now?: () => Date
 	/** Sleep override for the create wait loop (tests). */
 	sleep?: (ms: number) => Promise<void>
+	/** ANSI colors on stdout (tests); defaults to stdout being a TTY. */
+	color?: boolean
 }
 
 const GROUP_USAGE = `Usage:
@@ -91,7 +94,10 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 	const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
 
 	const created = await createWorkspace(key, { description: desc, fetch: deps.fetch })
-	console.error(`✓ created ${created.alias} (${created.status})`)
+	// Success-path info goes to stdout (terminals that color stderr red made
+	// this look like an error); only warnings and the transient progress
+	// spinner stay on stderr.
+	console.log(`✓ created ${created.alias} (${created.status})`)
 
 	let current = created
 	if (!values["no-wait"]) {
@@ -108,8 +114,12 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 		}
 	}
 
-	if (current.uri) console.error(`  uri  ${current.uri}`)
-	// The alias goes to stdout last so scripts can capture it: ALIAS=$(kimchictl workspace create)
+	if (current.uri) {
+		console.log()
+		for (const line of connectLines(current, deps.env)) console.log(line)
+		console.log()
+	}
+	// The alias is the last stdout line: ALIAS=$(kimchictl workspace create | tail -1)
 	console.log(current.alias)
 	return 0
 }
@@ -150,11 +160,14 @@ async function runList(args: string[], deps: WorkspaceDeps): Promise<number> {
 	const rows = workspaces.map((w) => [
 		w.alias,
 		w.status,
+		w.cluster,
+		formatAge(w.createdAt, now),
 		formatMillicores(w.cpuMillicores),
 		formatBytes(w.ramBytes),
-		formatAge(w.createdAt, now),
+		formatBytes(w.pvcSizeBytes),
+		w.uri ?? "",
 	])
-	console.log(formatTable(["NAME", "STATUS", "CPU", "MEMORY", "AGE"], rows))
+	console.log(formatTable(["NAME", "STATUS", "CLUSTER", "AGE", "CPU", "RAM", "PVC", "URI"], rows))
 	return 0
 }
 
@@ -182,17 +195,9 @@ async function runGet(args: string[], deps: WorkspaceDeps): Promise<number> {
 		return 0
 	}
 
-	const lines = [
-		`name:        ${workspace.alias}`,
-		workspace.description ? `description: ${workspace.description}` : undefined,
-		`status:      ${workspace.status}`,
-		workspace.uri ? `uri:         ${workspace.uri}` : undefined,
-		`created:     ${workspace.createdAt.toISOString()}`,
-		`cpu:         ${formatMillicores(workspace.cpuMillicores)}`,
-		`memory:      ${formatBytes(workspace.ramBytes)}`,
-		`storage:     ${formatBytes(workspace.pvcSizeBytes)}`,
-	].filter((line): line is string => line !== undefined)
-	for (const line of lines) console.log(line)
+	const now = deps.now?.() ?? new Date()
+	const color = deps.color ?? process.stdout.isTTY === true
+	for (const line of renderWorkspaceCard(workspace, deps.env, color, now)) console.log(line)
 	return 0
 }
 
@@ -233,12 +238,70 @@ async function runDelete(args: string[], deps: WorkspaceDeps): Promise<number> {
 
 // ---------------------------------------------------------------- shared
 
+/** Tinted status dot: green=active, yellow=transitional/suspended, dim=terminated. */
+function statusDot(status: Workspace["status"], color: boolean): string {
+	if (!color) return `● ${status}`
+	const tint = status === "active" ? "\x1b[32m" : status === "terminated" ? "\x1b[2m" : "\x1b[33m"
+	return `${tint}● ${status}\x1b[0m`
+}
+
+function dim(text: string, color: boolean): string {
+	return color ? `\x1b[2m${text}\x1b[0m` : text
+}
+
+/** Connect hints shared by `get` and `create`: ssh command + web IDE URL. */
+function connectLines(workspace: Workspace, env?: NodeJS.ProcessEnv): string[] {
+	if (!workspace.uri) return []
+	const domain = resolveSshDomain(undefined, env ?? process.env)
+	return ["  Connect:", `    $ ssh ${workspace.alias}.${domain}`, `    $ https://${workspace.uri}/public/ide/`]
+}
+
+/** Hero-line card ("Option C"): name+status first, dim metadata, resources, connect block. */
+function renderWorkspaceCard(
+	workspace: Workspace,
+	env: NodeJS.ProcessEnv | undefined,
+	color: boolean,
+	now: Date,
+): string[] {
+	const lines: string[] = [`${workspace.alias}  ${statusDot(workspace.status, color)}`]
+	if (workspace.description) lines.push(dim(`  ${workspace.description}`, color))
+
+	const meta = [
+		workspace.cluster ? `cluster ${workspace.cluster}` : "",
+		workspace.clientType,
+		`created ${formatAge(workspace.createdAt, now)} ago`,
+	].filter(Boolean)
+	if (meta.length > 0) lines.push(dim(`  ${meta.join(" · ")}`, color))
+
+	if (
+		workspace.cpuMillicores !== undefined ||
+		workspace.ramBytes !== undefined ||
+		workspace.pvcSizeBytes !== undefined
+	) {
+		lines.push(
+			dim(
+				`  ${formatMillicores(workspace.cpuMillicores)} CPU · ${formatBytes(workspace.ramBytes)} memory · ${formatBytes(workspace.pvcSizeBytes)} storage`,
+				color,
+			),
+		)
+	}
+
+	const connect = connectLines(workspace, env)
+	if (connect.length > 0) {
+		lines.push("")
+		lines.push(...connect)
+	}
+	return lines
+}
+
 function serializeWorkspace(w: Workspace): Record<string, unknown> {
 	return {
 		id: w.id,
 		alias: w.alias,
 		...(w.description ? { description: w.description } : {}),
 		status: w.status,
+		...(w.cluster ? { cluster: w.cluster } : {}),
+		...(w.clientType ? { clientType: w.clientType } : {}),
 		...(w.uri ? { uri: w.uri } : {}),
 		createdAt: w.createdAt.getTime() > 0 ? w.createdAt.toISOString() : undefined,
 		resources: {

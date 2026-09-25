@@ -16,7 +16,7 @@ const HARNESS_CLIENT_TYPE = "harness" // matches kimchi-dev:src/sandbox/constant
 const LIST_WORKSPACES_PAGE_LIMIT = 200
 const LIST_WORKSPACES_PAGE_HARD_CAP = 10
 
-export type WorkspaceStatus = "active" | "initializing" | "suspended" | "deleting" | "idle"
+export type WorkspaceStatus = "active" | "initializing" | "suspended" | "deleting" | "terminated"
 
 export interface Workspace {
 	/** Server id — also the command-line identifier (`workspace get <id>`, `ssh <id>`). */
@@ -28,6 +28,10 @@ export interface Workspace {
 	uri?: string
 	host?: string
 	createdAt: Date
+	/** Control-plane cluster (e.g. krep-us). */
+	cluster: string
+	/** Client that owns the workspace (e.g. harness). */
+	clientType: string
 	cpuMillicores?: number
 	ramBytes?: number
 	pvcSizeBytes?: number
@@ -212,6 +216,8 @@ export function mapWorkspace(raw: unknown, endpoint: string): Workspace {
 		uri,
 		host,
 		createdAt: createdAt ?? new Date(0),
+		cluster: typeof r.cluster === "string" ? r.cluster : "",
+		clientType: typeof r.clientType === "string" ? r.clientType : "",
 		cpuMillicores: cpuQuantityToMillicores(res?.cpu),
 		ramBytes: byteQuantityToBytes(res?.memory),
 		pvcSizeBytes: byteQuantityToBytes(res?.pvcSize),
@@ -228,7 +234,11 @@ function mapWorkspaceStatus(raw: unknown): WorkspaceStatus {
 			return "suspended"
 		case "DELETING":
 			return "deleting"
+		case "TERMINATED":
+			return "terminated"
 		default:
-			return "idle"
+			// Unknown statuses read as terminated, not "idle": dead workspaces
+			// are the dominant unknown the API reports.
+			return "terminated"
 	}
 }

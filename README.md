@@ -77,6 +77,8 @@ kimchictl version                     Print the version
 
 Suspend/resume exposed by the API today: **none**. `workspace suspend` / `workspace resume` land when the endpoints exist.
 
+`workspace create` prints progress, the connect commands, and finally the alias as the last stdout line — capture it with `kimchictl workspace create | tail -1`.
+
 ## Sharing auth with the kimchi agent
 
 `kimchictl login` writes the same credential files the kimchi coding agent uses — `~/.config/kimchi/harness/auth.json` (provider `kimchi-dev`) and the `apiKey` field of `~/.config/kimchi/config.json` — so either tool can sign you in and the other is logged in. `KIMCHI_API_KEY` overrides the file-based credentials.
