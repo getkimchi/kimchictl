@@ -27,7 +27,7 @@ post-install, the formula offers the same SSH integration step.
 ### npm (consumes the JS build, mainly for the kimchi harness)
 
 ```sh
-npm install -g kimchictl
+npm install -g @kimchi-dev/kimchictl
 ```
 
 ## Getting started

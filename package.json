@@ -41,6 +41,10 @@
 		".": {
 			"types": "./dist/run.d.ts",
 			"default": "./dist/run.js"
+		},
+		"./commands/workspace": {
+			"types": "./dist/commands/workspace.d.ts",
+			"default": "./dist/commands/workspace.js"
 		}
 	},
 	"scripts": {
