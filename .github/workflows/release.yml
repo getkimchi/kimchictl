@@ -18,10 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Install pnpm
-        run: |
-          curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=10.8.1 sh -
-          echo "$HOME/.local/share/pnpm" >> "$GITHUB_PATH"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.1
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -65,10 +64,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - name: Install pnpm
-        run: |
-          curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=10.8.1 sh -
-          echo "$HOME/.local/share/pnpm" >> "$GITHUB_PATH"
+      # The standalone pnpm installer puts pnpm in a per-OS home
+      # (~/.local/share/pnpm vs ~/Library/pnpm) — action-setup handles both.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.1
 
       - name: Install dependencies
         # Runtime deps only — bun bundles them into the compiled binary; the
