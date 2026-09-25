@@ -37,12 +37,6 @@
 	"publishConfig": {
 		"access": "public"
 	},
-	"//pi": "Runtime-extension manifest: kimchi install npm:@kimchi-dev/kimchictl loads src/extension.ts and registers /workspace. The CLI surface stays src/cli.ts; the compiled-in kimchi workspace subcommand comes from the kimchi-dev bridge.",
-	"pi": {
-		"extensions": [
-			"./src/extension.ts"
-		]
-	},
 	"exports": {
 		".": {
 			"types": "./dist/run.d.ts",
