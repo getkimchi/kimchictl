@@ -1,7 +1,9 @@
+import { runCompletion } from "./completion.js"
 import { guardCommand } from "./guard.js"
 import { runLogin } from "./login.js"
 import { runLogout } from "./logout.js"
 import { runSsh } from "./ssh.js"
+import { runUpdate } from "./update.js"
 import { runVersion } from "./version.js"
 import { runWhoami } from "./whoami.js"
 import { runWorkspace } from "./workspace.js"
@@ -30,6 +32,12 @@ export const COMMANDS: CommandDefinition[] = [
 	},
 	{ name: "ws", summary: "Alias for workspace", hidden: true, run: guardCommand(runWorkspace) },
 	{ name: "ssh", summary: "Connect to a workspace over SSH", run: guardCommand(runSsh) },
+	{ name: "update", summary: "Check for and install a newer kimchictl release", run: guardCommand(runUpdate) },
+	{
+		name: "completion",
+		summary: "Print shell completions (kimchictl completion bash|zsh|fish)",
+		run: guardCommand(runCompletion),
+	},
 	{ name: "version", summary: "Print the kimchictl version", run: runVersion },
 ]
 
