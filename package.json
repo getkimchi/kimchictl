@@ -45,6 +45,10 @@
 		"./commands/workspace": {
 			"types": "./dist/commands/workspace.d.ts",
 			"default": "./dist/commands/workspace.js"
+		},
+		"./commands/guard": {
+			"types": "./dist/commands/guard.d.ts",
+			"default": "./dist/commands/guard.js"
 		}
 	},
 	"scripts": {

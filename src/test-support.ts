@@ -4,9 +4,9 @@
  * Excluded from the published build (tsconfig.build.json).
  */
 
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { vi } from "vitest"
 
 const tempDirs: string[] = []
@@ -40,11 +40,27 @@ export function jsonResponse(body: unknown, status = 200): Response {
 	})
 }
 
-/** Point the shared-credential paths at a temp dir and neutralize ambient key env vars. */
-export function stubAgentDirEnv(dir: string): void {
+/** Point the shared-credential paths at an isolated HOME + agent dir and neutralize ambient key env vars. Returns the stubbed HOME — the shared config.json lives at `<home>/.config/kimchi/config.json` (sibling of the harness agent dir, matching kimchi-dev:src/config.ts). */
+export function stubAgentDirEnv(dir: string): { home: string } {
+	const home = makeTempDir()
+	vi.stubEnv("HOME", home)
 	vi.stubEnv("KIMCHI_CODING_AGENT_DIR", dir)
 	// resolveApiKey treats an empty KIMCHI_API_KEY as absent.
 	vi.stubEnv("KIMCHI_API_KEY", "")
+	return { home }
+}
+
+/** Path of the harness's shared wizard config under a (stubbed) HOME. */
+export function sharedConfigPath(home: string): string {
+	return join(home, ".config", "kimchi", "config.json")
+}
+
+/** Seed the shared config.json under a stubbed HOME (creates parent dirs). */
+export function writeSharedConfigJson(home: string, value: unknown): string {
+	const configPath = sharedConfigPath(home)
+	mkdirSync(dirname(configPath), { recursive: true })
+	writeFileSync(configPath, JSON.stringify(value, null, 2))
+	return configPath
 }
 
 /** Capture console.log / console.error; restore() in afterEach (or rely on vi.restoreAllMocks). */

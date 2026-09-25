@@ -6,6 +6,7 @@ import {
 	cleanupTempDirs,
 	jsonResponse,
 	makeTempDir,
+	sharedConfigPath,
 	stubAgentDirEnv,
 	stubFetch,
 } from "../test-support.js"
@@ -22,7 +23,7 @@ const aiEnablerOnlyFetch = stubFetch(async () => jsonResponse({ models: [{ slug:
 describe("kimchictl login --api-key", () => {
 	it("stores the key in auth.json and config.json (shared with the harness)", async () => {
 		const dir = makeTempDir()
-		stubAgentDirEnv(dir)
+		const { home } = stubAgentDirEnv(dir)
 		const { lines, errors } = captureConsole()
 
 		const fetch = stubFetch(async () =>
@@ -41,7 +42,7 @@ describe("kimchictl login --api-key", () => {
 			"kimchi-dev": { type: "api_key", key: "test-key" },
 			"kimchi-dev/anthropic": { type: "api_key", key: "test-key" },
 		})
-		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf-8"))).toEqual({ apiKey: "test-key" })
+		expect(JSON.parse(readFileSync(sharedConfigPath(home), "utf-8"))).toEqual({ apiKey: "test-key" })
 		expect(lines.some((l) => l.includes("Logged in to Kimchi"))).toBe(true)
 		expect(errors).toEqual([])
 	})
