@@ -14,7 +14,106 @@ env:
   BUN_VERSION: "1.4.0"
 
 jobs:
-  release:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pnpm
+        run: |
+          curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=10.8.1 sh -
+          echo "$HOME/.local/share/pnpm" >> "$GITHUB_PATH"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install & verify
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run check
+
+  # macOS binaries are built on macOS runners so they can be re-signed:
+  # bun --compile grafts the app payload onto a pre-signed runtime, which
+  # invalidates the signature, and the kernel kills badly-signed arm64
+  # binaries outright (SIGKILL, exit 137) — see oven-sh/bun#7208. darwin-x64
+  # is cross-compiled from the arm64 runner (bun targets are host-agnostic;
+  # codesign is not host-arch-sensitive).
+  build:
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            bun-target: bun-darwin-arm64
+            runner: macos-15
+            os: darwin
+          - platform: darwin-x64
+            bun-target: bun-darwin-x64
+            runner: macos-15
+            os: darwin
+          - platform: linux-x64
+            bun-target: bun-linux-x64
+            runner: ubuntu-latest
+            os: linux
+          - platform: linux-arm64
+            bun-target: bun-linux-arm64
+            runner: ubuntu-24.04-arm
+            os: linux
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install pnpm
+        run: |
+          curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=10.8.1 sh -
+          echo "$HOME/.local/share/pnpm" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        # Runtime deps only — bun bundles them into the compiled binary; the
+        # toolchain (biome/tsc/vitest) ran in the checks job.
+        run: pnpm install --frozen-lockfile --prod
+
+      - name: Stamp version from tag
+        # perl -pi -e is portable across BSD (macOS) and GNU sed semantics.
+        run: perl -pi -e 's/0\.0\.0-dev/${{ github.ref_name }}/' src/version.ts
+
+      # The codesign step parses entitlements with AMFI's strict XML
+      # deserializer; plutil is lenient and cannot gate this. Python's
+      # expat-backed plistlib is strict like AMFI and fails in seconds instead
+      # of mid-build on the macOS runner.
+      - name: Validate entitlements plist (strict XML)
+        if: matrix.os == 'darwin'
+        run: python3 -c "import plistlib; plistlib.load(open('build/entitlements.mac.plist', 'rb'))"
+
+      # Imports the Developer ID cert into a throwaway keychain and exports
+      # CSC_NAME for the signing step. No-ops when the secrets are absent —
+      # the build then falls back to ad-hoc signing.
+      - name: Set up Developer ID signing
+        if: matrix.os == 'darwin'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: bash scripts/setup-codesign.sh
+
+      - name: Compile binary
+        run: >-
+          bun build --compile --minify --target=${{ matrix.bun-target }} src/cli.ts
+          --outfile dist-bin/kimchictl-${{ matrix.platform }}
+
+      - name: Sign binary (macOS)
+        if: matrix.os == 'darwin'
+        run: bash scripts/codesign.sh dist-bin/kimchictl-${{ matrix.platform }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kimchictl-${{ matrix.platform }}
+          path: dist-bin/kimchictl-${{ matrix.platform }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
     runs-on: ubuntu-latest
     outputs:
       sha_darwin_arm64: ${{ steps.shas.outputs.sha_darwin_arm64 }}
@@ -23,33 +122,17 @@ jobs:
       sha_linux_x64: ${{ steps.shas.outputs.sha_linux_x64 }}
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/download-artifact@v4
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          path: dist-bin
+          merge-multiple: true
 
-      - name: Install toolchain deps
+      - name: Assemble release files
         run: |
-          curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=10.8.1 sh -
-          echo "$HOME/.local/share/pnpm" >> "$GITHUB_PATH"
-      - name: Install & verify
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm run check
-
-      - name: Stamp version from tag
-        run: sed -i 's/0\.0\.0-dev/${{ github.ref_name }}/' src/version.ts
-
-      - name: Compile binaries (cross-compile per target)
-        run: |
-          mkdir -p dist-bin
-          for spec in "bun-darwin-arm64 darwin-arm64" "bun-darwin-x64 darwin-x64" "bun-linux-arm64 linux-arm64" "bun-linux-x64 linux-x64"; do
-            set -- $spec
-            bun build --compile --minify --target="$1" src/cli.ts --outfile "dist-bin/kimchictl-$2"
-          done
           (cd dist-bin && sha256sum kimchictl-* > checksums.txt)
           # Ship the installer with the release: the documented install URL
           # points at the release asset, not the branch, so it always matches
-          # the binaries it downloads (and works from a fresh clone-less machine).
+          # the binaries it downloads.
           cp scripts/install.sh dist-bin/install.sh
           ls -la dist-bin/
 
@@ -69,7 +152,7 @@ jobs:
           generate_release_notes: true
 
   npm:
-    needs: release
+    needs: publish
     runs-on: ubuntu-latest
     env:
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -105,7 +188,7 @@ jobs:
           npm publish --access public
 
   homebrew-tap:
-    needs: release
+    needs: publish
     runs-on: ubuntu-latest
     env:
       TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
@@ -126,10 +209,10 @@ jobs:
         if: steps.token_guard.outputs.has_token == 'true'
         env:
           VERSION: ${{ github.ref_name }}
-          SHA_DARWIN_ARM64: ${{ needs.release.outputs.sha_darwin_arm64 }}
-          SHA_DARWIN_X64: ${{ needs.release.outputs.sha_darwin_x64 }}
-          SHA_LINUX_ARM64: ${{ needs.release.outputs.sha_linux_arm64 }}
-          SHA_LINUX_X64: ${{ needs.release.outputs.sha_linux_x64 }}
+          SHA_DARWIN_ARM64: ${{ needs.publish.outputs.sha_darwin_arm64 }}
+          SHA_DARWIN_X64: ${{ needs.publish.outputs.sha_darwin_x64 }}
+          SHA_LINUX_ARM64: ${{ needs.publish.outputs.sha_linux_arm64 }}
+          SHA_LINUX_X64: ${{ needs.publish.outputs.sha_linux_x64 }}
         run: |
           sed \
             -e "s/@VERSION@/${VERSION}/" \
@@ -157,4 +240,3 @@ jobs:
           else
             git commit -m "kimchictl ${{ github.ref_name }}"
             git push
-          fi

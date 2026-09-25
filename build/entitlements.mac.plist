@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Hardened runtime is enabled explicitly when signing with Developer ID;
+      these entitlements carve out only what the Bun runtime needs. Same set as
+      the kimchi harness binary (kimchi-dev:build/entitlements.mac.plist).
+
+      Allow JIT: JavaScriptCore compiles JS to executable memory at runtime;
+      hardened runtime forbids this without the entitlement.
+    -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!--
+      Allow unsigned executable memory: JSC's code-stub allocator maps
+      writable+executable pages that are not covered by the binary's
+      signature. Standard escape hatch for JS engines (same as Electron/V8).
+    -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!--
+      Disable library validation: the binary may dlopen native code signed
+      with a different identity than the Developer ID used here. Library
+      validation would reject any such dylib; kept for parity with the
+      harness so future native dependencies need no signing change.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

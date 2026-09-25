@@ -14,7 +14,7 @@
 curl -fsSL https://github.com/getkimchi/kimchictl/releases/latest/download/install.sh | sh
 ```
 
-The installer ships as a release asset, so it always matches the binaries it downloads. Installs to `/usr/local/bin` (or `~/.local/bin`, override with `KIMCHICTL_INSTALL`), verifies checksums, and configures the SSH integration (see below). Pin a release with `VERSION=0.2.0 sh`.
+The installer ships as a release asset, so it always matches the binaries it downloads. macOS binaries are Developer ID–signed with a hardened runtime (same signing infrastructure as the kimchi harness); SHA-256 checksums ship alongside every release. Installs to `/usr/local/bin` (or `~/.local/bin`, override with `KIMCHICTL_INSTALL`), verifies checksums, and configures the SSH integration (see below). Pin a release with `VERSION=0.2.0 sh`.
 
 ### Homebrew (macOS/Linux)
 
