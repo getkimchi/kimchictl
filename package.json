@@ -1,0 +1,62 @@
+{
+	"//name": "Scoped under the kimchi-dev npm org (the GitHub org is getkimchi)",
+	"name": "@kimchi-dev/kimchictl",
+	"//version": "Placeholder, never bumped: the git tag is the version, stamped by release.yml at publish time",
+	"version": "0.0.0",
+	"description": "Create and connect to kimchi remote workspaces from the terminal.",
+	"keywords": [
+		"kimchi",
+		"workspace",
+		"sandbox",
+		"remote-development",
+		"ssh",
+		"cli"
+	],
+	"license": "Apache-2.0",
+	"author": "CAST AI Group, Inc.",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/getkimchi/kimchictl.git"
+	},
+	"homepage": "https://github.com/getkimchi/kimchictl#readme",
+	"bugs": "https://github.com/getkimchi/kimchictl/issues",
+	"packageManager": "pnpm@10.8.1",
+	"type": "module",
+	"engines": {
+		"node": ">=22.19"
+	},
+	"bin": {
+		"kimchictl": "./bin/kimchictl.mjs"
+	},
+	"//files": "dist is what consumers import; src ships so source maps resolve and git installs stay inspectable; bin is the CLI entry shim",
+	"files": [
+		"bin",
+		"dist",
+		"src"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/run.d.ts",
+			"default": "./dist/run.js"
+		}
+	},
+	"scripts": {
+		"dev": "bun src/cli.ts",
+		"build": "tsc -p tsconfig.build.json",
+		"prepack": "pnpm run build",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"check": "pnpm run lint && pnpm run typecheck && pnpm run test"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.6",
+		"@types/node": "^22.19.18",
+		"typescript": "^5.9.3",
+		"vitest": "^3.2.4"
+	}
+}
