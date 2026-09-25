@@ -151,11 +151,16 @@ jobs:
           files: dist-bin/*
           generate_release_notes: true
 
+  # Tokenless npm publish via trusted publishing (OIDC) — same model as
+  # kimchi-workflows. The trusted publisher is registered per-package on
+  # npmjs.com (getkimchi/kimchictl, workflow release.yml, npm publish); no
+  # secrets to create or rotate.
   npm:
     needs: publish
     runs-on: ubuntu-latest
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
@@ -165,20 +170,10 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-          cache: pnpm
-
-      - name: "Guard: npm token configured"
-        id: token_guard
-        run: |
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "has_token=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::NPM_TOKEN secret is not configured — skipping npm publish. Add the org secret to enable it."
-          else
-            echo "has_token=true" >> "$GITHUB_OUTPUT"
-          fi
+          # Never use the package-manager cache in release builds.
+          package-manager-cache: false
 
       - name: Publish npm package
-        if: steps.token_guard.outputs.has_token == 'true'
         run: |
           npm pkg set version="${{ github.ref_name }}"
           sed -i 's/0\.0\.0-dev/${{ github.ref_name }}/' src/version.ts
