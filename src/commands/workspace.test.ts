@@ -10,8 +10,10 @@ import {
 	stubFetch,
 } from "../test-support.js"
 import { guardCommand } from "./guard.js"
-import { runWorkspace, type WorkspaceDeps } from "./workspace.js"
+import { runWorkspace, type WorkspaceDeps, run as workspaceRun } from "./workspace.js"
 
+// The harness-package contract: kimchi.commands modules export run(args)
+// with guard exit codes — pinned by the dispatch tests in kimchi-dev.
 const guardedWorkspace = guardCommand(runWorkspace)
 
 afterEach(() => {
@@ -339,6 +341,12 @@ describe("kimchictl workspace get", () => {
 	it("requires exactly one name", async () => {
 		expect((await run(["get"], apiFetch([]))).code).toBe(2)
 		expect((await run(["get", "a", "b"], apiFetch([]))).code).toBe(2)
+	})
+
+	it("exports the guarded run() entry for the harness package-command contract", async () => {
+		// Same function contract, exit codes included: a usage error maps to 2,
+		// not a thrown exception — the harness dispatcher returns it verbatim.
+		expect(await workspaceRun(["frobnicate"], { color: false })).toBe(2)
 	})
 })
 

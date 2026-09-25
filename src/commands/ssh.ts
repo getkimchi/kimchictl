@@ -11,6 +11,7 @@ import {
 import { connectToWorkspace } from "../ssh/connect.js"
 import { resolveTunnel } from "../ssh/tunnel.js"
 import { parseFlags, UsageError } from "./flags.js"
+import { guardCommand } from "./guard.js"
 
 export interface SshDeps {
 	fetch?: typeof globalThis.fetch
@@ -110,3 +111,6 @@ async function runProxy(args: string[], deps: SshDeps): Promise<number> {
 	await bridgeStdioToWebSocket({ wsUrl: creds.wsUrl, token: creds.token })
 	return 0
 }
+
+/** Canonical harness-package entry (see commands/workspace.ts). */
+export const run: (args: string[], deps?: SshDeps) => Promise<number> = guardCommand(runSsh)

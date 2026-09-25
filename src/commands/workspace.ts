@@ -6,6 +6,7 @@ import { createWorkspace, deleteWorkspace, listWorkspaces, type Workspace } from
 import { requireApiKey } from "../auth/resolve.js"
 import { resolveSshDomain } from "../ssh/config.js"
 import { parseFlags, UsageError } from "./flags.js"
+import { guardCommand } from "./guard.js"
 import { confirm, isInteractive } from "./prompt.js"
 import { formatTable } from "./table.js"
 
@@ -311,3 +312,11 @@ function serializeWorkspace(w: Workspace): Record<string, unknown> {
 		},
 	}
 }
+
+/**
+ * Canonical harness-package entry: modules listed in the kimchi.commands
+ * manifest must export run(args) (kimchi-dev:src/commands/package-commands.ts).
+ * guardCommand maps usage/domain errors to exit codes 2/1, matching the
+ * CLI registry.
+ */
+export const run: (args: string[], deps?: WorkspaceDeps) => Promise<number> = guardCommand(runWorkspace)
