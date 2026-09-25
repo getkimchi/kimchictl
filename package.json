@@ -41,6 +41,7 @@
 	"kimchi": {
 		"commands": {
 			"workspace": "./dist/commands/workspace.js",
+			"ws": "./dist/commands/workspace.js",
 			"ssh": "./dist/commands/ssh.js"
 		}
 	},
