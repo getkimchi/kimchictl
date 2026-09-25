@@ -15,15 +15,15 @@ export async function runWhoami(args: string[], deps: WhoamiDeps = {}): Promise<
 	const env = deps.env ?? process.env
 
 	const { key, source } = requireApiKey(env)
+	if (values.output !== "json" && values.output !== "text") {
+		console.error(`kimchictl whoami: unsupported --output "${values.output}" (expected text|json)`)
+		return 2
+	}
 	const me = await getMe(key, { fetch: deps.fetch })
 
 	if (values.output === "json") {
 		console.log(JSON.stringify(me))
 	} else {
-		if (values.output !== "text") {
-			console.error(`kimchictl whoami: unsupported --output "${values.output}" (expected text|json)`)
-			return 2
-		}
 		console.log(`id:       ${me.id}`)
 		if (me.username) console.log(`username: ${me.username}`)
 		if (me.email) console.log(`email:    ${me.email}`)
