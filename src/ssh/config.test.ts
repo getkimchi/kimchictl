@@ -7,6 +7,7 @@ import {
 	isSshIntegrationConfigured,
 	resolveProxyCommandTarget,
 	resolveSshDomain,
+	resolveSshPaths,
 	SSH_INCLUDE_BEGIN,
 	type SshPaths,
 	setupSshIntegration,
@@ -169,5 +170,23 @@ describe("resolveProxyCommandTarget", () => {
 
 	it("falls back to PATH lookup under a node/bun runtime", () => {
 		expect(resolveProxyCommandTarget("/usr/local/bin/node")).toBe("kimchictl")
+	})
+})
+
+describe("resolveSshPaths", () => {
+	it("defaults to ~/.config/kimchi/kimchictl, alongside the harness config tree", () => {
+		const paths = resolveSshPaths({ HOME: "/home/tester" })
+
+		expect(paths.home).toBe("/home/tester/.config/kimchi/kimchictl")
+		expect(paths.sshConfig).toBe("/home/tester/.config/kimchi/kimchictl/ssh_config")
+		expect(paths.knownHosts).toBe("/home/tester/.config/kimchi/kimchictl/known_hosts")
+		expect(paths.userSshConfig).toBe("/home/tester/.ssh/config")
+	})
+
+	it("honors KIMCHICTL_HOME as an explicit override", () => {
+		const paths = resolveSshPaths({ HOME: "/home/tester", KIMCHICTL_HOME: "/custom/state" })
+
+		expect(paths.home).toBe("/custom/state")
+		expect(paths.sshConfig).toBe("/custom/state/ssh_config")
 	})
 })

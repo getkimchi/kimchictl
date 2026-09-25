@@ -7,10 +7,10 @@ import { dirname, join } from "node:path"
  * Native SSH integration (TS port of kap:internal/ssh/setup.go).
  *
  * Layout:
- *   ~/.kimchictl/ssh_config   — `Host *.<domain>` wildcard routing through
- *                               `kimchictl ssh proxy %h` as ProxyCommand
- *   ~/.kimchictl/known_hosts  — dedicated known_hosts for workspace hosts
- *   ~/.ssh/config             — gets a marker-wrapped `Include` block
+ *   ~/.config/kimchi/kimchictl/ssh_config   — `Host *.<domain>` wildcard routing
+ *                                             through `kimchictl ssh proxy %h` as ProxyCommand
+ *   ~/.config/kimchi/kimchictl/known_hosts  — dedicated known_hosts for workspace hosts
+ *   ~/.ssh/config                           — gets a marker-wrapped `Include` block
  *
  * Behavior per the product decision "setup happens on install": writes are
  * automatic (no y/N prompt) with a clear notice; `--uninstall` reverts.
@@ -20,7 +20,7 @@ export const SSH_INCLUDE_BEGIN = "# >>> kimchictl managed include >>>"
 export const SSH_INCLUDE_END = "# <<< kimchictl managed include <<<"
 
 export interface SshPaths {
-	/** ~/.kimchictl root (also used for update-check cache). */
+	/** ~/.config/kimchi/kimchictl root (also used for the update-check cache). */
 	home: string
 	sshConfig: string
 	knownHosts: string
@@ -28,7 +28,8 @@ export interface SshPaths {
 }
 
 export function resolveSshPaths(env: NodeJS.ProcessEnv = process.env): SshPaths {
-	const home = env.KIMCHICTL_HOME ?? join(env.HOME ?? homedir(), ".kimchictl")
+	// Lives with the rest of the kimchi config tree (harness/, desktop/, memory/…).
+	const home = env.KIMCHICTL_HOME ?? join(env.HOME ?? homedir(), ".config", "kimchi", "kimchictl")
 	const userSshConfig = join(env.HOME ?? homedir(), ".ssh", "config")
 	return {
 		home,
@@ -105,7 +106,7 @@ function extractManagedBlock(content: string): string | undefined {
 }
 
 /**
- * Write ~/.kimchictl/ssh_config and ensure ~/.ssh/config includes it.
+ * Write the kimchictl ssh_config and ensure ~/.ssh/config includes it.
  * Idempotent; a stale managed block (different include path) is replaced in
  * place. Returns human-readable notes of everything that changed.
  */

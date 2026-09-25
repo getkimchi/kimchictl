@@ -9,7 +9,7 @@ import { VERSION } from "../version.js"
  *
  * The check must never block or fail a real command: every failure mode
  * resolves to "no notification". Results cache in
- * ~/.kimchictl/update-check.json for 24h.
+ * ~/.config/kimchi/kimchictl/update-check.json for 24h.
  */
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/getkimchi/kimchictl/releases/latest"

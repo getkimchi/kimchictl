@@ -104,7 +104,7 @@ main() {
 	esac
 
 	# Native SSH integration is configured automatically at install time
-	# (writes ~/.kimchictl/ssh_config + an Include block in ~/.ssh/config).
+	# (writes ~/.config/kimchi/kimchictl/ssh_config + an Include block in ~/.ssh/config).
 	if [ -n "${KIMCHICTL_NO_SSH_SETUP:-}" ]; then
 		log "  skipped SSH integration (KIMCHICTL_NO_SSH_SETUP)"
 	elif "${bin_dir}/${BIN_NAME}" ssh setup >/dev/null 2>&1; then

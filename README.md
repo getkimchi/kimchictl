@@ -44,8 +44,8 @@ kimchictl ssh pensive-brainy-kimchi-c711c6-56d6      # or plain: ssh <name>.remo
 
 At install time (and on first `kimchictl ssh`), kimchictl writes:
 
-- `~/.kimchictl/ssh_config` — a `Host *.remote.kimchi.dev` block routing connections through `kimchictl ssh proxy %h` as `ProxyCommand`
-- an `Include ~/.kimchictl/ssh_config` block (marker-wrapped) at the **top** of your `~/.ssh/config`, so it can't be shadowed by existing `Host *` default
+- `~/.config/kimchi/kimchictl/ssh_config` — a `Host *.remote.kimchi.dev` block routing connections through `kimchictl ssh proxy %h` as `ProxyCommand`
+- an `Include ~/.config/kimchi/kimchictl/ssh_config` block (marker-wrapped) at the **top** of your `~/.ssh/config`, so it can't be shadowed by existing `Host *` default
 
 That is all workspace connectivity needs — `ssh <name>.remote.kimchi.dev`, `scp`, git-over-ssh, and editor Remote-SSH extensions just work.
 
