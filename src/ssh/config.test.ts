@@ -39,10 +39,11 @@ describe("setupSshIntegration", () => {
 	it("writes ssh_config (0600) and prepends the Include block", async () => {
 		const { paths } = makePaths()
 
+		const target = resolveProxyCommandTarget()
 		const { notes } = await setupSshIntegration({ paths, domain: DOMAIN })
 
 		const generated = readFileSync(paths.sshConfig, "utf-8")
-		expect(generated).toBe(sshConfigContent(DOMAIN, paths.knownHosts, "kimchictl"))
+		expect(generated).toBe(sshConfigContent(DOMAIN, paths.knownHosts, target))
 		expect(statSync(paths.sshConfig).mode & 0o777).toBe(0o600)
 
 		const userConfig = readFileSync(paths.userSshConfig, "utf-8")
@@ -135,6 +136,15 @@ describe("isSshIntegrationConfigured", () => {
 		// Endpoint changed → different wildcard domain → re-setup needed.
 		expect(await isSshIntegrationConfigured(paths, "remote.dev.example.com")).toBe(false)
 	})
+
+	it("re-triggers setup when the ProxyCommand target drifted (binary moved)", async () => {
+		const { paths } = makePaths()
+
+		await setupSshIntegration({ paths, domain: DOMAIN, proxyTarget: "/old/location/kimchictl" })
+
+		expect(await isSshIntegrationConfigured(paths, DOMAIN, "/new/location/kimchictl")).toBe(false)
+		expect(await isSshIntegrationConfigured(paths, DOMAIN, "/old/location/kimchictl")).toBe(true)
+	})
 })
 
 describe("resolveSshDomain", () => {
@@ -163,13 +173,24 @@ describe("resolveSshDomain", () => {
 })
 
 describe("resolveProxyCommandTarget", () => {
-	it("uses the compiled binary path when named like kimchictl", () => {
+	it("uses the compiled binary's own path when named like kimchictl", () => {
 		expect(resolveProxyCommandTarget("/usr/local/bin/kimchictl")).toBe("/usr/local/bin/kimchictl")
 		expect(resolveProxyCommandTarget("/opt/kimchictl-v1.2.3")).toBe("/opt/kimchictl-v1.2.3")
 	})
 
-	it("falls back to PATH lookup under a node/bun runtime", () => {
-		expect(resolveProxyCommandTarget("/usr/local/bin/node")).toBe("kimchictl")
+	it("pins the runtime + absolute entry script under node/bun (no PATH reliance)", () => {
+		expect(resolveProxyCommandTarget("/usr/local/bin/node", "/opt/app/dist/cli.js")).toBe(
+			"/usr/local/bin/node /opt/app/dist/cli.js",
+		)
+		// Relative entries resolve to absolute so the config works from any cwd.
+		expect(resolveProxyCommandTarget("/usr/bin/bun", "src/cli.ts")).toBe(
+			`/usr/bin/bun ${join(process.cwd(), "src/cli.ts")}`,
+		)
+	})
+
+	it("quotes tokens containing spaces", () => {
+		expect(resolveProxyCommandTarget("/opt/My App/kimchictl")).toBe('"/opt/My App/kimchictl"')
+		expect(resolveProxyCommandTarget("/usr/bin/node", "/opt/My App/cli.js")).toBe('/usr/bin/node "/opt/My App/cli.js"')
 	})
 })
 

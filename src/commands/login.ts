@@ -3,6 +3,7 @@ import { authenticateViaBrowser } from "../auth/browser-login.js"
 import { writeApiKeyToConfig } from "../auth/config-file.js"
 import { fetchKimchiProviderIds, ModelsFetchError } from "../auth/models-providers.js"
 import { resolveAuthJsonPath, resolveConfigJsonPath, resolveModelsJsonPath } from "../auth/paths.js"
+import { ensureSshIntegration } from "../ssh/connect.js"
 import { parseFlags } from "./flags.js"
 import { isInteractive } from "./prompt.js"
 
@@ -86,6 +87,8 @@ export async function runLogin(args: string[], deps: LoginDeps = {}): Promise<nu
 
 	console.log(`✓ Logged in to Kimchi — credentials saved to ${authPath}`)
 	console.log("  Shared with the kimchi coding harness; no second login needed there.")
-	// TODO(step 5): run `ssh setup` automatically here on first login
+	// First login is the natural moment to finish the native SSH integration
+	// (automatic-with-notice; KIMCHICTL_NO_SSH_SETUP opts out).
+	await ensureSshIntegration({ env })
 	return 0
 }

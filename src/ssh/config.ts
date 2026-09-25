@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 
 /**
  * Native SSH integration (TS port of kap:internal/ssh/setup.go).
@@ -60,14 +60,27 @@ export function resolveSshDomain(explicit?: string, env: NodeJS.ProcessEnv = pro
 	return "remote.kimchi.dev"
 }
 
+/** Shell-quote a single ProxyCommand token when it contains whitespace. */
+function shellQuote(token: string): string {
+	return /\s|"|'/.test(token) ? `"${token.replace(/"/g, '\\"')}"` : token
+}
+
 /**
- * The ProxyCommand points at the running binary when we can name it
- * (compiled `kimchictl` / a PATH shim); falls back to resolving via PATH.
+ * The ProxyCommand must not rely on ssh's PATH lookup — point it at a
+ * fully-qualified command:
+ *   - compiled binary: its own absolute path
+ *   - node/bun runtime: the runtime plus the ABSOLUTE entry script
+ *     (e.g. `/usr/bin/node /…/dist/cli.js`), so the config works from any cwd
+ * Bare `kimchictl` remains only as a last resort when no entry can be named.
  */
-export function resolveProxyCommandTarget(execPath: string = process.execPath): string {
+export function resolveProxyCommandTarget(execPath: string = process.execPath, entryScript?: string): string {
 	const base = execPath.split("/").pop() ?? ""
 	if (base === "kimchictl" || base.startsWith("kimchictl-")) {
-		return execPath.includes(" ") ? `"${execPath}"` : execPath
+		return shellQuote(execPath)
+	}
+	const entry = entryScript ?? process.argv[1]
+	if (entry) {
+		return `${shellQuote(execPath)} ${shellQuote(resolve(entry))}`
 	}
 	return "kimchictl"
 }
@@ -192,7 +205,11 @@ export async function uninstallSshIntegration(options: { paths: SshPaths }): Pro
  * True when the generated ssh_config exists AND the user config includes it.
  * Used by `ssh <name>` / `login` to auto-setup when missing.
  */
-export async function isSshIntegrationConfigured(paths: SshPaths, domain: string): Promise<boolean> {
+export async function isSshIntegrationConfigured(
+	paths: SshPaths,
+	domain: string,
+	proxyTarget?: string,
+): Promise<boolean> {
 	if (!existsSync(paths.sshConfig)) return false
 	try {
 		const userConfig = await readFile(paths.userSshConfig, "utf-8")
@@ -200,8 +217,10 @@ export async function isSshIntegrationConfigured(paths: SshPaths, domain: string
 		const existing = extractManagedBlock(userConfig)
 		if (existing !== expected && existing !== `${expected}\n`) return false
 		const generated = await readFile(paths.sshConfig, "utf-8")
-		// Domain drift (endpoint override changed) must re-trigger setup.
-		return generated.includes(`Host *.${domain}`)
+		// Both domain drift (endpoint override changed) and proxy-target drift
+		// (the executable moved since setup) must re-trigger setup: compare the
+		// full expected content.
+		return generated === sshConfigContent(domain, paths.knownHosts, proxyTarget ?? resolveProxyCommandTarget())
 	} catch {
 		return false
 	}

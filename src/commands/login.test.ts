@@ -44,7 +44,8 @@ describe("kimchictl login --api-key", () => {
 		})
 		expect(JSON.parse(readFileSync(sharedConfigPath(home), "utf-8"))).toEqual({ apiKey: "test-key" })
 		expect(lines.some((l) => l.includes("Logged in to Kimchi"))).toBe(true)
-		expect(errors).toEqual([])
+		// First login finishes the SSH integration automatically (with notice).
+		expect(errors.some((l) => l.includes("SSH integration configured"))).toBe(true)
 	})
 
 	it("unions provider ids from an existing harness models.json", async () => {
