@@ -47,6 +47,10 @@ jobs:
             bun build --compile --minify --target="$1" src/cli.ts --outfile "dist-bin/kimchictl-$2"
           done
           (cd dist-bin && sha256sum kimchictl-* > checksums.txt)
+          # Ship the installer with the release: the documented install URL
+          # points at the release asset, not the branch, so it always matches
+          # the binaries it downloads (and works from a fresh clone-less machine).
+          cp scripts/install.sh dist-bin/install.sh
           ls -la dist-bin/
 
       - name: Capture asset checksums

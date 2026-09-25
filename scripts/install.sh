@@ -2,7 +2,11 @@
 # kimchictl installer — downloads the latest (or pinned) prebuilt binary from
 # GitHub Releases and installs it to a bin dir.
 #
-#   curl -fsSL https://raw.githubusercontent.com/getkimchi/kimchictl/main/scripts/install.sh | sh
+#   curl -fsSL https://github.com/getkimchi/kimchictl/releases/latest/download/install.sh | sh
+#
+# (This script ships as a release asset, so it always matches the binaries it
+# downloads. Pin a version with:
+#   curl -fsSL https://github.com/getkimchi/kimchictl/releases/download/0.0.1/install.sh | VERSION=0.0.1 sh)
 #
 # Honored env vars:
 #   VERSION                 pin a release (e.g. "0.2.0"); default: latest
