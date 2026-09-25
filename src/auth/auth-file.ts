@@ -1,7 +1,6 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { dirname } from "node:path"
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { basename, dirname, join } from "node:path"
 import { isDeepStrictEqual } from "node:util"
-import { lock } from "proper-lockfile"
 import { isKimchiProvider } from "./provider-ids.js"
 
 /**
@@ -11,15 +10,15 @@ import { isKimchiProvider } from "./provider-ids.js"
  *
  *   { "<providerId>": { "type": "api_key", "key": "…" }, … }
  *
- * written pretty-printed (2-space indent, trailing newline), mode 0600, under
- * a proper-lockfile lock. kimchictl must stay byte-compatible: the harness
- * reads the entries this writes, and vice versa.
+ * written pretty-printed (2-space indent, trailing newline), mode 0600.
+ * kimchictl must stay byte-compatible: the harness reads the entries this
+ * writes, and vice versa.
  *
- * Difference vs the harness port: the harness derives provider ids from
- * models.json and throws when it is missing; kimchictl takes the ids as a
- * parameter (the login command derives them from models.json when present and
- * from the models metadata API otherwise) so it can run on machines that
- * have never installed the harness.
+ * Locking: the harness uses proper-lockfile for the same file. kimchictl
+ * writes atomically via temp-file-and-rename (POSIX atomic) instead —
+ * zero transitive dependencies, which matters because this module runs
+ * inside the harness's dynamically-imported package tree where CJS
+ * transitive deps (graceful-fs) don't always resolve.
  */
 
 /** Read the raw auth.json map. Returns {} when the file is absent or blank. */
@@ -49,35 +48,40 @@ export function readSavedApiKey(authPath: string): string | undefined {
  */
 export async function syncSharedAuth(authPath: string, apiKey: string, providerIds: readonly string[]): Promise<void> {
 	mkdirSync(dirname(authPath), { recursive: true, mode: 0o700 })
-	const release = await lock(authPath, { realpath: false, retries: 10 })
-	try {
-		const authExists = existsSync(authPath)
-		if (!apiKey && !authExists) return
 
-		const credentials = authExists ? readAuthJson(authPath) : {}
-		const nextCredentials = { ...credentials }
-		for (const providerId of Object.keys(nextCredentials)) {
-			if (isKimchiProvider(providerId)) {
-				delete nextCredentials[providerId]
-			}
+	const authExists = existsSync(authPath)
+	if (!apiKey && !authExists) return
+
+	const credentials = authExists ? readAuthJson(authPath) : {}
+	const nextCredentials = { ...credentials }
+	for (const providerId of Object.keys(nextCredentials)) {
+		if (isKimchiProvider(providerId)) {
+			delete nextCredentials[providerId]
 		}
+	}
 
-		if (apiKey) {
-			const ids = new Set([...providerIds.filter(isKimchiProvider), "kimchi-dev"])
-			for (const providerId of ids) {
-				nextCredentials[providerId] = { type: "api_key", key: apiKey }
-			}
+	if (apiKey) {
+		const ids = new Set([...providerIds.filter(isKimchiProvider), "kimchi-dev"])
+		for (const providerId of ids) {
+			nextCredentials[providerId] = { type: "api_key", key: apiKey }
 		}
+	}
 
-		if (authExists && isDeepStrictEqual(credentials, nextCredentials)) {
-			chmodSync(authPath, 0o600)
-			return
-		}
-
-		writeFileSync(authPath, `${JSON.stringify(nextCredentials, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 })
+	if (authExists && isDeepStrictEqual(credentials, nextCredentials)) {
 		chmodSync(authPath, 0o600)
-	} finally {
-		await release()
+		return
+	}
+
+	// Atomic write: temp file + rename (POSIX), so the harness never sees a
+	// partially-written auth.json. The temp file is cleaned up on failure.
+	const tempPath = join(dirname(authPath), `.${basename(authPath)}.tmp-${process.pid}`)
+	try {
+		writeFileSync(tempPath, `${JSON.stringify(nextCredentials, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 })
+		renameSync(tempPath, authPath)
+		chmodSync(authPath, 0o600)
+	} catch (err) {
+		rmSync(tempPath, { force: true })
+		throw err
 	}
 }
 
