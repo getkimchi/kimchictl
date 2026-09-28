@@ -127,8 +127,15 @@ Options:
 	const { key } = requireApiKey(env)
 	await verifyApiKey(key, { fetch: deps.fetch })
 	const creds = await resolveTunnel(key, host, { port, fetch: deps.fetch })
-	await bridgeStdioToWebSocket({ wsUrl: creds.wsUrl, token: creds.token })
-	return 0
+	try {
+		await bridgeStdioToWebSocket({ wsUrl: creds.wsUrl, token: creds.token })
+	} catch {
+		// Bridge terminated (inactivity watchdog or server close) — the
+		// session is over either way. Exit cleanly so SSH can close.
+	}
+	// Force exit: SSH keeps the ProxyCommand's stdin pipe open after the
+	// session ends, which keeps Node.js's event loop alive indefinitely.
+	process.exit(0)
 }
 
 /** Canonical harness-package entry (see commands/workspace.ts). */

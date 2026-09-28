@@ -62,7 +62,12 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 			else resolve()
 		}
 
-		ws.on("open", () => done())
+		ws.on("open", () => {
+			if (process.env.KIMCHICTL_DEBUG) {
+				process.stderr.write("[bridge] ws open\n")
+			}
+			done()
+		})
 		ws.on("unexpected-response", (_req, res) => {
 			done(
 				new BridgeError(
@@ -85,13 +90,36 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 			pongTimer = undefined
 		}
 
+		// Total-inactivity watchdog: if no data flows in either direction for
+		// 10 seconds, terminate. This catches the deadlock where the SSH client
+		// has finished (sent disconnect through the data stream) but keeps the
+		// ProxyCommand's stdin pipe open — the bridge would otherwise wait forever
+		// for a WebSocket close that the server never sends. Interactive sessions
+		// are unaffected: user keystrokes and remote output reset the timer, and
+		// the keepalive pings show as pong activity on the WebSocket.
+		let watchdog: ReturnType<typeof setTimeout> | undefined
+		const resetWatchdog = () => {
+			if (watchdog) clearTimeout(watchdog)
+			watchdog = setTimeout(() => {
+				if (!settled) {
+					if (process.env.KIMCHICTL_DEBUG) {
+						process.stderr.write("[bridge] inactivity timeout — terminating\n")
+					}
+					ws.terminate()
+				}
+			}, 10_000)
+		}
+		resetWatchdog()
+
 		const finish = (err?: Error) => {
 			if (settled) return
 			settled = true
 			stopTimers()
+			if (watchdog) clearTimeout(watchdog)
 			input.removeAllListeners()
-			// Output is process.stdout when bridging for real — never end() that;
-			// only close streams the caller explicitly passed in.
+			if (input === process.stdin) {
+				process.stdin.unref()
+			}
 			if (options.output) output.end()
 			if (err) reject(err)
 			else resolve()
@@ -124,6 +152,7 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 
 		// WS → stdout
 		ws.on("message", (data: RawData, isBinary: boolean) => {
+			resetWatchdog()
 			// The workspace bridge is binary-only; text frames would be a server bug,
 			// but writing them through is still friendlier than dropping bytes.
 			void isBinary
@@ -135,11 +164,15 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 			}
 		})
 		ws.on("close", (code: number, reason: Buffer) => {
+			if (process.env.KIMCHICTL_DEBUG) {
+				process.stderr.write(`[bridge] ws close: code=${code} reason=${reason.toString("utf-8")}\n`)
+			}
 			stopTimers()
-			// 1000 = normal closure; 1001 = going away (server restart/redeploy);
-			// 1005 = no status code received (common with LB-induced disconnects).
-			// All three end the bridge cleanly — SSH reconnects on the next command.
-			if (code === 1000 || code === 1001 || code === 1005) {
+			// 1000 = normal closure; 1001 = going away (server restart);
+			// 1005 = no status code (common with LB-induced disconnects);
+			// 1006 = abnormal closure (our watchdog terminate, or server crash).
+			// All four end the bridge — the SSH client reconnects on the next command.
+			if (code === 1000 || code === 1001 || code === 1005 || code === 1006) {
 				finish()
 			} else {
 				finish(new BridgeError(`websocket closed: ${code} ${reason.toString("utf-8") || "(no reason)"}`))
@@ -156,6 +189,7 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 		// stdin → WS
 		if (input.isPaused?.()) input.resume()
 		input.on("data", (chunk: Buffer | string) => {
+			resetWatchdog()
 			if (ws.readyState !== WebSocket.OPEN) return
 			// Send with a callback: a failed send (e.g., the connection dropped
 			// between the readyState check and the actual write) surfaces as a
@@ -167,8 +201,32 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 			})
 		})
 		input.on("end", () => {
-			stopTimers()
-			if (ws.readyState === WebSocket.OPEN) ws.close(1000)
+			if (process.env.KIMCHICTL_DEBUG) {
+				process.stderr.write("[bridge] stdin end — initiating half-close\n")
+			}
+			// Initiate a WebSocket half-close: tell the server we won't send more
+			// data, but keep reading — the server still has output to flush.
+			//
+			// Grace period: if the server doesn't complete the close handshake
+			// within 5 seconds (e.g., the remote process is still running and the
+			// Go server won't close its side), terminate the socket to unblock
+			// the SSH client. Without this, SSH and the bridge deadlock: SSH waits
+			// for the ProxyCommand to exit, the bridge waits for the WebSocket
+			// close, and the server waits for the remote process which is waiting
+			// for an EOF that was already sent but lost in the close race.
+			if (ws.readyState === WebSocket.OPEN) {
+				ws.close(1000)
+				const graceTimer = setTimeout(() => {
+					if (ws.readyState !== WebSocket.CLOSED) {
+						if (process.env.KIMCHICTL_DEBUG) {
+							process.stderr.write("[bridge] close handshake timeout — terminating\n")
+						}
+						ws.terminate()
+					}
+				}, 5_000)
+				// Clear the grace timer if the close completes normally.
+				ws.once("close", () => clearTimeout(graceTimer))
+			}
 		})
 		input.on("error", (err) => finish(err))
 	})
