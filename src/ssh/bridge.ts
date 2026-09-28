@@ -164,6 +164,15 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 			}
 		})
 		ws.on("close", (code: number, reason: Buffer) => {
+			// Always log unexpected disconnects to stderr — this is the primary
+			// diagnostic for "random disconnect" reports. Normal closures (1000)
+			// and our watchdog (1006) are silent; anything else tells us what the
+			// server or network layer did.
+			if (code !== 1000 && code !== 1006) {
+				process.stderr.write(
+					`kimchictl: websocket closed: code=${code} reason=${reason.toString("utf-8") || "(none)"}\n`,
+				)
+			}
 			if (process.env.KIMCHICTL_DEBUG) {
 				process.stderr.write(`[bridge] ws close: code=${code} reason=${reason.toString("utf-8")}\n`)
 			}
