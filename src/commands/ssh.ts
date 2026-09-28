@@ -58,6 +58,16 @@ async function runSetup(args: string[], deps: SshDeps): Promise<number> {
 		uninstall: { type: "boolean" },
 		domain: { type: "string" },
 	})
+	if (values.help) {
+		console.log(`Usage:
+  kimchictl ssh setup [options]
+
+Options:
+  --uninstall     Remove the SSH integration
+  --domain <name>  Override the workspace wildcard domain
+  --help           Show this help`)
+		return 0
+	}
 	if (positionals.length > 0) {
 		throw new UsageError("kimchictl ssh setup: unexpected positional argument")
 	}
@@ -95,6 +105,15 @@ async function runProxy(args: string[], deps: SshDeps): Promise<number> {
 	const { values, positionals } = parseFlags("ssh proxy", args, {
 		port: { type: "string", default: "443" },
 	})
+	if (values.help) {
+		console.log(`Usage:
+  kimchictl ssh proxy <host> [options]
+
+Options:
+  --port <n>   WebSocket port (default: 443)
+  --help       Show this help`)
+		return 0
+	}
 	const host = positionals[0]
 	if (!host || positionals.length > 1) {
 		throw new UsageError("kimchictl ssh proxy: expected one host")

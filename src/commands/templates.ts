@@ -60,6 +60,15 @@ async function runTemplatesList(args: string[], deps: TemplatesDeps): Promise<nu
 	const { values, positionals } = parseFlags("templates list", args, {
 		output: { type: "string", short: "o", default: "table" },
 	})
+	if (values.help) {
+		console.log(`Usage:
+  kimchictl templates list [options]
+
+Options:
+  --output <format>   Output format: table | json (default: table)
+  --help              Show this help`)
+		return 0
+	}
 	if (positionals.length > 0) {
 		throw new UsageError("kimchictl templates list: unexpected positional argument")
 	}
@@ -94,6 +103,15 @@ async function runTemplatesGet(args: string[], deps: TemplatesDeps): Promise<num
 	const { values, positionals } = parseFlags("templates get", args, {
 		output: { type: "string", short: "o", default: "text" },
 	})
+	if (values.help) {
+		console.log(`Usage:
+  kimchictl templates get <name-or-id> [options]
+
+Options:
+  --output <format>   Output format: text | json (default: text)
+  --help              Show this help`)
+		return 0
+	}
 	if (positionals.length !== 1) {
 		throw new UsageError("kimchictl templates get: expected exactly one template name or ID")
 	}

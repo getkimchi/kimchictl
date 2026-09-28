@@ -12,6 +12,8 @@ export type FlagValues = Record<string, string | boolean | string[] | boolean[] 
 
 /**
  * Strict flag parsing with a uniform usage-error shape across commands.
+ * `--help` and `-h` are always accepted (boolean); callers check
+ * `values.help` to print their verb-specific usage before doing any work.
  * Values keep their raw type (declared options are TypeScript-blind here —
  * narrow at the call site, relying on the declared option `type`).
  */
@@ -20,8 +22,12 @@ export function parseFlags(
 	args: string[],
 	options: ParseArgsOptionsConfig,
 ): { values: FlagValues; positionals: string[] } {
+	const withHelp: ParseArgsOptionsConfig = {
+		help: { type: "boolean", short: "h" },
+		...options,
+	}
 	try {
-		const parsed = parseArgs({ args, options, strict: true, allowPositionals: true })
+		const parsed = parseArgs({ args, options: withHelp, strict: true, allowPositionals: true })
 		return { values: parsed.values as FlagValues, positionals: parsed.positionals }
 	} catch (err) {
 		throw new UsageError(`kimchictl ${command}: ${err instanceof Error ? err.message : String(err)}`)

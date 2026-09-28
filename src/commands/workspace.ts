@@ -88,6 +88,25 @@ export async function runWorkspace(args: string[], deps: WorkspaceDeps = {}): Pr
 
 // ---------------------------------------------------------------- create
 
+const CREATE_USAGE = `Usage:
+  kimchictl workspace create [options]
+
+Options:
+  --desc <text>              Description
+  --template <name>          Workspace template (conflicts with spec flags)
+  --template-id <uuid>       Template ID (alternative to --template)
+  --cpu <qty>               CPU request (e.g. "500m", "2")
+  --memory <qty>             Memory request (e.g. "1Gi", "512Mi")
+  --storage <qty>            PVC size (e.g. "20Gi")
+  --dep <tool>               CLI tool to install (repeatable, e.g. --dep jq --dep node@22)
+  --egress-allow <dest>      Allow egress destination (repeatable)
+  --egress-deny <dest>       Deny egress destination (repeatable)
+  --egress-default-allow     Default-allow egress (instead of deny-by-default)
+  --init-script <script>     Boot script (or @file to read from file)
+  --no-wait                  Skip waiting for ACTIVE
+  --timeout <seconds>        Wait timeout (default 60)
+  --help                     Show this help`
+
 async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 	const { values, positionals } = parseFlags("workspace create", args, {
 		desc: { type: "string" },
@@ -104,6 +123,10 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 		"no-wait": { type: "boolean" },
 		timeout: { type: "string", default: "60" },
 	})
+	if (values.help) {
+		console.log(CREATE_USAGE)
+		return 0
+	}
 	if (positionals.length > 0) {
 		throw new UsageError(
 			"kimchictl workspace create: unexpected positional argument (workspaces are named by the server)",
@@ -240,6 +263,15 @@ async function runList(args: string[], deps: WorkspaceDeps): Promise<number> {
 	const { values, positionals } = parseFlags("workspace list", args, {
 		output: { type: "string", short: "o", default: "table" },
 	})
+	if (values.help) {
+		console.log(`Usage:
+  kimchictl workspace list [options]
+
+Options:
+  --output <format>   Output format: table | json (default: table)
+  --help              Show this help`)
+		return 0
+	}
 	if (positionals.length > 0) {
 		throw new UsageError("kimchictl workspace list: unexpected positional argument")
 	}
@@ -280,6 +312,15 @@ async function runGet(args: string[], deps: WorkspaceDeps): Promise<number> {
 	const { values, positionals } = parseFlags("workspace get", args, {
 		output: { type: "string", short: "o", default: "text" },
 	})
+	if (values.help) {
+		console.log(`Usage:
+  kimchictl workspace get <name> [options]
+
+Options:
+  --output <format>   Output format: text | json (default: text)
+  --help              Show this help`)
+		return 0
+	}
 	if (positionals.length !== 1) {
 		throw new UsageError("kimchictl workspace get: expected exactly one workspace name")
 	}
@@ -310,6 +351,15 @@ async function runDelete(args: string[], deps: WorkspaceDeps): Promise<number> {
 	const { values, positionals } = parseFlags("workspace delete", args, {
 		force: { type: "boolean", short: "f" },
 	})
+	if (values.help) {
+		console.log(`Usage:
+  kimchictl workspace delete <name> [options]
+
+Options:
+  --force, -f    Skip the confirmation prompt
+  --help          Show this help`)
+		return 0
+	}
 	if (positionals.length !== 1) {
 		throw new UsageError("kimchictl workspace delete: expected exactly one workspace name")
 	}
