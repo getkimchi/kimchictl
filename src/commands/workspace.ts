@@ -1,8 +1,15 @@
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { resolveWorkspace } from "../api/resolver.js"
 import { formatAge, formatBytes, formatMillicores } from "../api/resources.js"
-import { resolveTemplate } from "../api/templates.js"
 import { waitForWorkspaceActive } from "../api/wait.js"
-import { createWorkspace, deleteWorkspace, listWorkspaces, type Workspace } from "../api/workspaces.js"
+import {
+	type CreateWorkspaceSpec,
+	createWorkspace,
+	deleteWorkspace,
+	listWorkspaces,
+	type Workspace,
+} from "../api/workspaces.js"
 import { requireApiKey } from "../auth/resolve.js"
 import { resolveSshDomain } from "../ssh/config.js"
 import { parseFlags, UsageError } from "./flags.js"
@@ -33,6 +40,21 @@ Verbs:
   list     List workspaces  (alias: ls)
   get      Show workspace details
   delete   Delete a workspace  (alias: rm)
+
+Create options:
+  --desc <text>              Description
+  --template <name>          Workspace template (conflicts with spec flags)
+  --template-id <uuid>       Template ID (alternative to --template)
+  --cpu <qty>               CPU request (e.g. "500m", "2")
+  --memory <qty>             Memory request (e.g. "1Gi", "512Mi")
+  --storage <qty>            PVC size (e.g. "20Gi")
+  --dep <tool>               CLI tool to install (repeatable, e.g. --dep jq --dep node@22)
+  --egress-allow <dest>      Allow egress destination (repeatable)
+  --egress-deny <dest>       Deny egress destination (repeatable)
+  --egress-default-allow     Default-allow egress (instead of deny-by-default)
+  --init-script <script>     Boot script (or @file to read from file)
+  --no-wait                  Skip waiting for ACTIVE
+  --timeout <seconds>        Wait timeout (default 60)
 
 Options:
   --help   Show this help`
@@ -70,6 +92,15 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 	const { values, positionals } = parseFlags("workspace create", args, {
 		desc: { type: "string" },
 		template: { type: "string", short: "t" },
+		"template-id": { type: "string" },
+		cpu: { type: "string" },
+		memory: { type: "string" },
+		storage: { type: "string" },
+		dep: { type: "string", multiple: true },
+		"egress-allow": { type: "string", multiple: true },
+		"egress-deny": { type: "string", multiple: true },
+		"egress-default-allow": { type: "boolean" },
+		"init-script": { type: "string" },
 		"no-wait": { type: "boolean" },
 		timeout: { type: "string", default: "60" },
 	})
@@ -79,22 +110,92 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 		)
 	}
 
-	const template = values.template
-	if (typeof template === "string" && template.length > 0) {
-		// Placeholder: errors gracefully until the templates API contract lands.
-		resolveTemplate(template)
-	}
-	if (values.template !== undefined && (typeof values.template !== "string" || values.template.length === 0)) {
-		throw new UsageError("kimchictl workspace create: --template must not be empty")
-	}
-
 	const timeoutSeconds = parseTimeoutSeconds(values.timeout, "workspace create")
 	const desc = typeof values.desc === "string" && values.desc.length > 0 ? values.desc : undefined
+
+	const templateName = typeof values.template === "string" && values.template.length > 0 ? values.template : undefined
+	const templateId =
+		typeof values["template-id"] === "string" && values["template-id"].length > 0 ? values["template-id"] : undefined
+
+	// Collect explicit spec parameters from the flags.
+	const resources: { cpu?: string; memory?: string; pvcSize?: string } = {}
+	if (typeof values.cpu === "string" && values.cpu.length > 0) resources.cpu = values.cpu
+	if (typeof values.memory === "string" && values.memory.length > 0) resources.memory = values.memory
+	if (typeof values.storage === "string" && values.storage.length > 0) resources.pvcSize = values.storage
+
+	const dependencies = (Array.isArray(values.dep) ? values.dep : []).filter(
+		(d): d is string => typeof d === "string" && d.length > 0,
+	)
+	const egressAllowed = (Array.isArray(values["egress-allow"]) ? values["egress-allow"] : []).filter(
+		(d): d is string => typeof d === "string" && d.length > 0,
+	)
+	const egressDenied = (Array.isArray(values["egress-deny"]) ? values["egress-deny"] : []).filter(
+		(d): d is string => typeof d === "string" && d.length > 0,
+	)
+	const egressDefaultAllow = values["egress-default-allow"] === true
+	const initScriptRaw = typeof values["init-script"] === "string" ? values["init-script"] : undefined
+
+	// @file syntax for --init-script: read the script from a file.
+	let initScript: string | undefined
+	if (initScriptRaw) {
+		if (initScriptRaw.startsWith("@")) {
+			const filePath = initScriptRaw.slice(1)
+			try {
+				initScript = readFileSync(resolve(filePath), "utf-8")
+			} catch {
+				throw new UsageError(`kimchictl workspace create: --init-script: cannot read ${filePath}`)
+			}
+		} else {
+			initScript = initScriptRaw
+		}
+	}
+
+	const hasSpec =
+		Object.keys(resources).length > 0 ||
+		dependencies.length > 0 ||
+		egressAllowed.length > 0 ||
+		egressDenied.length > 0 ||
+		egressDefaultAllow ||
+		initScript !== undefined
+
+	// Mutual exclusion: template fields and spec parameters cannot coexist
+	// (the API rejects both — proto: "conflicts with spec").
+	if ((templateName || templateId) && hasSpec) {
+		throw new UsageError(
+			"kimchictl workspace create: --template and spec flags (--cpu, --memory, --storage, --dep, --egress-*, --init-script) are mutually exclusive — a template provides these values",
+		)
+	}
+	if (templateName && templateId) {
+		throw new UsageError("kimchictl workspace create: --template and --template-id are mutually exclusive")
+	}
+
+	const spec: CreateWorkspaceSpec | undefined = hasSpec
+		? {
+				...(Object.keys(resources).length > 0 ? { resources } : {}),
+				...(dependencies.length > 0 ? { dependencies } : {}),
+				...(egressAllowed.length > 0 || egressDenied.length > 0 || egressDefaultAllow
+					? {
+							egressPolicy: {
+								...(egressDefaultAllow ? { denyByDefault: false } : {}),
+								...(egressAllowed.length > 0 ? { allowed: egressAllowed } : {}),
+								...(egressDenied.length > 0 ? { denied: egressDenied } : {}),
+							},
+						}
+					: {}),
+				...(initScript !== undefined ? { initScript } : {}),
+			}
+		: undefined
 
 	const { key } = requireApiKey(deps.env)
 	const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
 
-	const created = await createWorkspace(key, { description: desc, fetch: deps.fetch })
+	const created = await createWorkspace(key, {
+		description: desc,
+		templateName,
+		templateId,
+		spec,
+		fetch: deps.fetch,
+	})
 	// Success-path info goes to stdout (terminals that color stderr red made
 	// this look like an error); only warnings and the transient progress
 	// spinner stay on stderr.

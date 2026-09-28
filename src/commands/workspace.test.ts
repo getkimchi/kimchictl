@@ -198,11 +198,88 @@ describe("kimchictl workspace create", () => {
 		expect(lines[lines.length - 1]).toBe("bright-oak-otter")
 	})
 
-	it("--template errors gracefully until the templates API lands", async () => {
-		const { code, errors } = await run(["create", "--template", "node"], apiFetch([]))
+	it("--template conflicts with spec flags (usage error)", async () => {
+		for (const specFlag of [
+			["--cpu", "2"],
+			["--memory", "4Gi"],
+			["--storage", "20Gi"],
+			["--dep", "jq"],
+			["--egress-allow", "*.example.com"],
+			["--init-script", "echo hi"],
+		]) {
+			const { code, errors } = await run(["create", "--template", "node", ...specFlag], apiFetch([]))
+			expect(code).toBe(2)
+			expect(errors.some((e) => e.includes("mutually exclusive"))).toBe(true)
+		}
+	})
 
-		expect(code).toBe(1)
-		expect(errors[0]).toContain('templates are not available yet (requested "node")')
+	it("--template and --template-id conflict (usage error)", async () => {
+		const { code, errors } = await run(
+			["create", "--template", "node", "--template-id", "11111111-2222-3333-4444-555555555555"],
+			apiFetch([]),
+		)
+		expect(code).toBe(2)
+		expect(errors.some((e) => e.includes("--template and --template-id"))).toBe(true)
+	})
+
+	it("sends templateName to the API", async () => {
+		const calls: { body?: unknown }[] = []
+		const rawFetch = stubFetch(async (url, init) => {
+			if (url.endsWith("workspace-tokens:verifyKey")) return jsonResponse({ organizationId: "org-1" })
+			if (url.endsWith("/workspaces") && init?.method === "POST") {
+				calls.push({ body: JSON.parse(String(init.body)) })
+				return jsonResponse(wsJson({ status: "ACTIVE" }))
+			}
+			throw new Error(`unexpected: ${init?.method ?? "GET"} ${url}`)
+		})
+
+		await run(["create", "--template", "rust", "--no-wait"], rawFetch as typeof globalThis.fetch)
+
+		expect(calls[0]?.body).toMatchObject({
+			templateName: "rust",
+			clientType: "harness",
+		})
+	})
+
+	it("sends spec fields to the API", async () => {
+		const calls: { body?: unknown }[] = []
+		const rawFetch = stubFetch(async (url, init) => {
+			if (url.endsWith("workspace-tokens:verifyKey")) return jsonResponse({ organizationId: "org-1" })
+			if (url.endsWith("/workspaces") && init?.method === "POST") {
+				calls.push({ body: JSON.parse(String(init.body)) })
+				return jsonResponse(wsJson({ status: "ACTIVE" }))
+			}
+			throw new Error(`unexpected: ${init?.method ?? "GET"} ${url}`)
+		})
+
+		await run(
+			[
+				"create",
+				"--cpu",
+				"500m",
+				"--memory",
+				"2Gi",
+				"--storage",
+				"10Gi",
+				"--dep",
+				"jq",
+				"--dep",
+				"node@22",
+				"--egress-allow",
+				"*.example.com",
+				"--egress-default-allow",
+				"--no-wait",
+			],
+			rawFetch as typeof globalThis.fetch,
+		)
+
+		expect(calls[0]?.body).toMatchObject({
+			spec: {
+				resources: { cpu: "500m", memory: "2Gi", pvcSize: "10Gi" },
+				dependencies: ["jq", "node@22"],
+				egressPolicy: { denyByDefault: false, allowed: ["*.example.com"] },
+			},
+		})
 	})
 
 	it("rejects positional arguments and bad timeouts as usage errors", async () => {

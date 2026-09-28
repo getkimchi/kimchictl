@@ -122,17 +122,80 @@ export async function getWorkspace(apiKey: string, id: string, options?: Workspa
 }
 
 /**
- * Create a workspace. Server generates the alias (like kap) — there is no
- * client-side name input. Returns the created workspace (status likely
- * "initializing"; callers may poll getWorkspace until "active").
+ * Create-time workspace parameters (mirrors the WorkspaceSpec proto).
+ * Set either template fields or spec fields — never both.
  */
-export async function createWorkspace(
-	apiKey: string,
-	options: WorkspaceCommandOptions & { description?: string },
-): Promise<Workspace> {
+export interface CreateWorkspaceSpec {
+	resources?: {
+		/** CPU request as a k8s quantity string, e.g. "500m", "2". */
+		cpu?: string
+		/** Memory request as a k8s quantity string, e.g. "1Gi", "512Mi". */
+		memory?: string
+		/** PVC size as a k8s quantity string, e.g. "20Gi". */
+		pvcSize?: string
+	}
+	/** CLI tools to install at boot, e.g. ["jq", "node@22"]. */
+	dependencies?: string[]
+	egressPolicy?: {
+		denyByDefault?: boolean
+		allowed?: string[]
+		denied?: string[]
+	}
+	/** Shell script executed at boot after dependency installation. */
+	initScript?: string
+}
+
+export interface CreateWorkspaceOptions extends WorkspaceCommandOptions {
+	description?: string
+	templateName?: string
+	templateId?: string
+	spec?: CreateWorkspaceSpec
+}
+
+/**
+ * Create a workspace. Server generates the alias (like kap) — there is no
+ * client-side name input. Set either template fields (templateName or
+ * templateId) or explicit spec parameters, never both (the API rejects
+ * both — proto: "conflicts with spec: set either template fields or
+ * explicit parameters, never both"). Returns the created workspace
+ * (status likely "initializing"; callers may poll getWorkspace until
+ * "active").
+ */
+export async function createWorkspace(apiKey: string, options: CreateWorkspaceOptions): Promise<Workspace> {
 	const fetchImpl = options?.fetch ?? globalThis.fetch
 	const endpoint = resolveEndpoint(options)
 	const orgId = await resolveOrgId(apiKey, options)
+
+	// Build the request body — the Workspace message (gRPC-gateway body: "workspace").
+	// gRPC-gateway maps proto field names to camelCase JSON keys.
+	const body: Record<string, unknown> = {
+		clientType: HARNESS_CLIENT_TYPE,
+	}
+	if (options.description) body.description = options.description
+	if (options.templateName) body.templateName = options.templateName
+	if (options.templateId) body.templateId = options.templateId
+
+	const spec = options.spec
+	if (spec) {
+		const specBody: Record<string, unknown> = {}
+		if (spec.resources) {
+			const res: Record<string, string> = {}
+			if (spec.resources.cpu) res.cpu = spec.resources.cpu
+			if (spec.resources.memory) res.memory = spec.resources.memory
+			if (spec.resources.pvcSize) res.pvcSize = spec.resources.pvcSize
+			if (Object.keys(res).length > 0) specBody.resources = res
+		}
+		if (spec.dependencies && spec.dependencies.length > 0) specBody.dependencies = spec.dependencies
+		if (spec.egressPolicy) {
+			const eg: Record<string, unknown> = {}
+			if (spec.egressPolicy.denyByDefault !== undefined) eg.denyByDefault = spec.egressPolicy.denyByDefault
+			if (spec.egressPolicy.allowed && spec.egressPolicy.allowed.length > 0) eg.allowed = spec.egressPolicy.allowed
+			if (spec.egressPolicy.denied && spec.egressPolicy.denied.length > 0) eg.denied = spec.egressPolicy.denied
+			if (Object.keys(eg).length > 0) specBody.egressPolicy = eg
+		}
+		if (spec.initScript) specBody.initScript = spec.initScript
+		if (Object.keys(specBody).length > 0) body.spec = specBody
+	}
 
 	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspaces`
 	const resp = await fetchWithTimeout(
@@ -140,10 +203,7 @@ export async function createWorkspace(
 		{
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-			body: JSON.stringify({
-				...(options.description ? { description: options.description } : {}),
-				clientType: HARNESS_CLIENT_TYPE,
-			}),
+			body: JSON.stringify(body),
 		},
 		fetchImpl,
 		30_000,

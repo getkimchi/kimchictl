@@ -8,7 +8,7 @@ export class UsageError extends Error {
 	}
 }
 
-export type FlagValues = Record<string, string | boolean | undefined>
+export type FlagValues = Record<string, string | boolean | string[] | boolean[] | undefined>
 
 /**
  * Strict flag parsing with a uniform usage-error shape across commands.
