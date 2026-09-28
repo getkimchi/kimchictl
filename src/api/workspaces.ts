@@ -32,6 +32,8 @@ export interface Workspace {
 	cluster: string
 	/** Client that owns the workspace (e.g. harness). */
 	clientType: string
+	/** Template the workspace was created from, when set. */
+	templateName: string
 	cpuMillicores?: number
 	ramBytes?: number
 	pvcSizeBytes?: number
@@ -278,6 +280,7 @@ export function mapWorkspace(raw: unknown, endpoint: string): Workspace {
 		createdAt: createdAt ?? new Date(0),
 		cluster: typeof r.cluster === "string" ? r.cluster : "",
 		clientType: typeof r.clientType === "string" ? r.clientType : "",
+		templateName: typeof r.templateName === "string" ? r.templateName : "",
 		cpuMillicores: cpuQuantityToMillicores(res?.cpu),
 		ramBytes: byteQuantityToBytes(res?.memory),
 		pvcSizeBytes: byteQuantityToBytes(res?.pvcSize),

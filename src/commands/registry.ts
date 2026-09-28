@@ -3,6 +3,7 @@ import { guardCommand } from "./guard.js"
 import { runLogin } from "./login.js"
 import { runLogout } from "./logout.js"
 import { runSsh } from "./ssh.js"
+import { runTemplates } from "./templates.js"
 import { runUpdate } from "./update.js"
 import { runVersion } from "./version.js"
 import { runWhoami } from "./whoami.js"
@@ -32,6 +33,7 @@ export const COMMANDS: CommandDefinition[] = [
 	},
 	{ name: "ws", summary: "Alias for workspace", hidden: true, run: guardCommand(runWorkspace) },
 	{ name: "ssh", summary: "Connect to a workspace over SSH", run: guardCommand(runSsh) },
+	{ name: "templates", summary: "Browse workspace templates (list | get)", run: guardCommand(runTemplates) },
 	{ name: "update", summary: "Check for and install a newer kimchictl release", run: guardCommand(runUpdate) },
 	{
 		name: "completion",

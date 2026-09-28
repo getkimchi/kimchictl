@@ -42,7 +42,8 @@
 		"commands": {
 			"workspace": "./dist/commands/workspace.js",
 			"ws": "./dist/commands/workspace.js",
-			"ssh": "./dist/commands/ssh.js"
+			"ssh": "./dist/commands/ssh.js",
+			"templates": "./dist/commands/templates.js"
 		}
 	},
 	"exports": {
