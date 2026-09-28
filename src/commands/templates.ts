@@ -1,10 +1,15 @@
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { formatAge, formatBytes, formatMillicores } from "../api/resources.js"
 import {
 	AmbiguousTemplateError,
+	type CreateTemplateInput,
+	createWorkspaceTemplate,
 	getWorkspaceTemplate,
 	listWorkspaceTemplates,
 	TemplateNotFoundError,
 	type WorkspaceTemplate,
+	type WorkspaceTemplateSpec,
 } from "../api/templates.js"
 import { requireApiKey } from "../auth/resolve.js"
 import { parseFlags, UsageError } from "./flags.js"
@@ -26,11 +31,35 @@ const TEMPLATES_USAGE = `Usage:
   kimchictl templates <verb> [options]
 
 Verbs:
-  list   List workspace templates  (alias: ls)
-  get    Show template details
+  list    List workspace templates  (alias: ls)
+  get     Show template details
+  create  Create a workspace template
 
 Options:
   --help   Show this help`
+
+const CREATE_USAGE = `Usage:
+  kimchictl templates create [options]
+
+Create a template from a JSON file or from inline flags (not both).
+
+File:
+  --file <path>           Read the full template from a JSON file
+                          (same shape as 'templates get --output json')
+
+Inline:
+  --name <name>           Template name (required, immutable, lowercase)
+  --desc <text>            Description
+  --cpu <qty>              CPU request (e.g. "500m", "2")
+  --memory <qty>           Memory request (e.g. "1Gi", "512Mi")
+  --storage <qty>          PVC size (e.g. "20Gi")
+  --dep <tool>             CLI tool to install (repeatable, e.g. --dep jq --dep node@22)
+  --egress-allow <dest>   Allow egress destination (repeatable)
+  --egress-deny <dest>    Deny egress destination (repeatable)
+  --egress-default-allow  Default-allow egress (instead of deny-by-default)
+  --init-script <script>  Boot script (or @file to read from file)
+
+  --help                  Show this help`
 
 /** `kimchictl templates <verb> …` — read-only browse of workspace templates. */
 export async function runTemplates(args: string[], deps: TemplatesDeps = {}): Promise<number> {
@@ -41,6 +70,8 @@ export async function runTemplates(args: string[], deps: TemplatesDeps = {}): Pr
 			return runTemplatesList(rest, deps)
 		case "get":
 			return runTemplatesGet(rest, deps)
+		case "create":
+			return runTemplatesCreate(rest, deps)
 		case "help":
 		case "--help":
 		case "-h":
@@ -150,6 +181,133 @@ Options:
 	for (const line of renderTemplateCard(template, deps.color ?? false, deps.now?.() ?? new Date())) {
 		console.log(line)
 	}
+	return 0
+}
+
+async function runTemplatesCreate(args: string[], deps: TemplatesDeps): Promise<number> {
+	const { values, positionals } = parseFlags("templates create", args, {
+		file: { type: "string", short: "f" },
+		name: { type: "string" },
+		desc: { type: "string" },
+		cpu: { type: "string" },
+		memory: { type: "string" },
+		storage: { type: "string" },
+		dep: { type: "string", multiple: true },
+		"egress-allow": { type: "string", multiple: true },
+		"egress-deny": { type: "string", multiple: true },
+		"egress-default-allow": { type: "boolean" },
+		"init-script": { type: "string" },
+	})
+	if (values.help) {
+		console.log(CREATE_USAGE)
+		return 0
+	}
+	if (positionals.length > 0) {
+		throw new UsageError("kimchictl templates create: unexpected positional argument")
+	}
+
+	let input: CreateTemplateInput
+
+	const file = typeof values.file === "string" && values.file.length > 0 ? values.file : undefined
+	if (file) {
+		// --file and inline spec flags are mutually exclusive
+		const inlineFlags = [
+			"cpu",
+			"memory",
+			"storage",
+			"dep",
+			"egress-allow",
+			"egress-deny",
+			"egress-default-allow",
+			"init-script",
+		]
+		const usedInline = inlineFlags.some((f) => values[f] !== undefined)
+		if (usedInline) {
+			throw new UsageError(
+				"kimchictl templates create: --file and inline spec flags are mutually exclusive — the file carries the full definition",
+			)
+		}
+		if (typeof values.name === "string" && values.name.length > 0) {
+			throw new UsageError(
+				"kimchictl templates create: --file and --name are mutually exclusive (the file carries the name)",
+			)
+		}
+		try {
+			const raw = JSON.parse(readFileSync(resolve(file), "utf-8")) as CreateTemplateInput
+			if (typeof raw.name !== "string" || raw.name.length === 0) {
+				throw new UsageError(`kimchictl templates create: --file: missing required field "name"`)
+			}
+			input = raw
+		} catch (err) {
+			if (err instanceof UsageError) throw err
+			throw new UsageError(`kimchictl templates create: --file: ${err instanceof Error ? err.message : String(err)}`)
+		}
+	} else {
+		// Inline flags
+		const name = typeof values.name === "string" && values.name.length > 0 ? values.name : undefined
+		if (!name) {
+			throw new UsageError("kimchictl templates create: --name is required (or use --file)")
+		}
+
+		const spec: WorkspaceTemplateSpec = {}
+
+		const resources: { cpu?: string; memory?: string; pvcSize?: string } = {}
+		if (typeof values.cpu === "string" && values.cpu.length > 0) resources.cpu = values.cpu
+		if (typeof values.memory === "string" && values.memory.length > 0) resources.memory = values.memory
+		if (typeof values.storage === "string" && values.storage.length > 0) resources.pvcSize = values.storage
+		if (Object.keys(resources).length > 0) spec.resources = resources
+
+		const dependencies = (Array.isArray(values.dep) ? values.dep : []).filter(
+			(d): d is string => typeof d === "string" && d.length > 0,
+		)
+		if (dependencies.length > 0) spec.dependencies = dependencies
+
+		const egressAllowed = (Array.isArray(values["egress-allow"]) ? values["egress-allow"] : []).filter(
+			(d): d is string => typeof d === "string" && d.length > 0,
+		)
+		const egressDenied = (Array.isArray(values["egress-deny"]) ? values["egress-deny"] : []).filter(
+			(d): d is string => typeof d === "string" && d.length > 0,
+		)
+		const egressDefaultAllow = values["egress-default-allow"] === true
+		if (egressAllowed.length > 0 || egressDenied.length > 0 || egressDefaultAllow) {
+			spec.egressPolicy = {
+				...(egressDefaultAllow ? { denyByDefault: false } : {}),
+				...(egressAllowed.length > 0 ? { allowed: egressAllowed } : {}),
+				...(egressDenied.length > 0 ? { denied: egressDenied } : {}),
+			}
+		}
+
+		const initScriptRaw = typeof values["init-script"] === "string" ? values["init-script"] : undefined
+		if (initScriptRaw) {
+			if (initScriptRaw.startsWith("@")) {
+				const scriptPath = initScriptRaw.slice(1)
+				try {
+					spec.initScript = readFileSync(resolve(scriptPath), "utf-8")
+				} catch {
+					throw new UsageError(`kimchictl templates create: --init-script: cannot read ${scriptPath}`)
+				}
+			} else {
+				spec.initScript = initScriptRaw
+			}
+		}
+
+		input = {
+			name,
+			description: typeof values.desc === "string" && values.desc.length > 0 ? values.desc : undefined,
+			spec: Object.keys(spec).length > 0 ? spec : undefined,
+		}
+	}
+
+	// Validate the name pattern client-side (must match the proto's validation)
+	if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(input.name)) {
+		throw new UsageError(
+			`kimchictl templates create: name "${input.name}" is invalid — must be lowercase alphanumeric, dots, and dashes (e.g. "rust", "python-django")`,
+		)
+	}
+
+	const { key } = requireApiKey(deps.env)
+	const created = await createWorkspaceTemplate(key, input, { fetch: deps.fetch })
+	console.log(`✓ created template ${created.name}`)
 	return 0
 }
 

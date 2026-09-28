@@ -61,6 +61,44 @@ export class AmbiguousTemplateError extends Error {
 	}
 }
 
+/** Input shape for creating a template — a subset of WorkspaceTemplate. */
+export interface CreateTemplateInput {
+	name: string
+	description?: string
+	spec?: WorkspaceTemplateSpec
+}
+
+export async function createWorkspaceTemplate(
+	apiKey: string,
+	input: CreateTemplateInput,
+	options?: WorkspaceTemplateOptions,
+): Promise<WorkspaceTemplate> {
+	const fetchImpl = options?.fetch ?? globalThis.fetch
+	const endpoint = resolveEndpoint(options)
+	const orgId = await resolveOrgId(apiKey, options)
+
+	const body: Record<string, unknown> = { name: input.name }
+	if (input.description) body.description = input.description
+	if (input.spec) body.spec = input.spec
+
+	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspace-templates`
+	const resp = await fetchWithTimeout(
+		url,
+		{
+			method: "POST",
+			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		},
+		fetchImpl,
+		30_000,
+		options?.signal,
+	)
+	await checkResponse(resp, url)
+
+	const data: unknown = await resp.json().catch(() => undefined)
+	return mapWorkspaceTemplate(data, endpoint)
+}
+
 export async function listWorkspaceTemplates(
 	apiKey: string,
 	options?: WorkspaceTemplateOptions,
