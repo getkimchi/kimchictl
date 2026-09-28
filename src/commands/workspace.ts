@@ -45,7 +45,7 @@ Create options:
   --desc <text>              Description
   --template <name>          Workspace template (conflicts with spec flags)
   --template-id <uuid>       Template ID (alternative to --template)
-  --cpu <qty>               CPU request (e.g. "500m", "2")
+  --cpu <qty>                CPU request (e.g. "500m", "2")
   --memory <qty>             Memory request (e.g. "1Gi", "512Mi")
   --storage <qty>            PVC size (e.g. "20Gi")
   --dep <tool>               CLI tool to install (repeatable, e.g. --dep jq --dep node@22)
@@ -95,7 +95,7 @@ Options:
   --desc <text>              Description
   --template <name>          Workspace template (conflicts with spec flags)
   --template-id <uuid>       Template ID (alternative to --template)
-  --cpu <qty>               CPU request (e.g. "500m", "2")
+  --cpu <qty>                CPU request (e.g. "500m", "2")
   --memory <qty>             Memory request (e.g. "1Gi", "512Mi")
   --storage <qty>            PVC size (e.g. "20Gi")
   --dep <tool>               CLI tool to install (repeatable, e.g. --dep jq --dep node@22)
