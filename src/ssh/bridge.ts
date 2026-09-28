@@ -90,32 +90,10 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 			pongTimer = undefined
 		}
 
-		// Total-inactivity watchdog: if no data flows in either direction for
-		// 10 seconds, terminate. This catches the deadlock where the SSH client
-		// has finished (sent disconnect through the data stream) but keeps the
-		// ProxyCommand's stdin pipe open — the bridge would otherwise wait forever
-		// for a WebSocket close that the server never sends. Interactive sessions
-		// are unaffected: user keystrokes and remote output reset the timer, and
-		// the keepalive pings show as pong activity on the WebSocket.
-		let watchdog: ReturnType<typeof setTimeout> | undefined
-		const resetWatchdog = () => {
-			if (watchdog) clearTimeout(watchdog)
-			watchdog = setTimeout(() => {
-				if (!settled) {
-					if (process.env.KIMCHICTL_DEBUG) {
-						process.stderr.write("[bridge] inactivity timeout — terminating\n")
-					}
-					ws.terminate()
-				}
-			}, 10_000)
-		}
-		resetWatchdog()
-
 		const finish = (err?: Error) => {
 			if (settled) return
 			settled = true
 			stopTimers()
-			if (watchdog) clearTimeout(watchdog)
 			input.removeAllListeners()
 			if (input === process.stdin) {
 				process.stdin.unref()
@@ -127,7 +105,9 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 
 		// Keepalive: ping every 30s; if no pong within 60s, the connection is
 		// dead — close it so the SSH client can surface the failure instead of
-		// hanging on a half-open socket.
+		// hanging on a half-open socket. This is the ONLY termination mechanism
+		// for idle connections: a healthy server responds to pings regardless
+		// of user activity, so an idle-but-alive session is never killed.
 		pingTimer = setInterval(() => {
 			if (ws.readyState !== WebSocket.OPEN) return
 			try {
@@ -152,7 +132,6 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 
 		// WS → stdout
 		ws.on("message", (data: RawData, isBinary: boolean) => {
-			resetWatchdog()
 			// The workspace bridge is binary-only; text frames would be a server bug,
 			// but writing them through is still friendlier than dropping bytes.
 			void isBinary
@@ -198,7 +177,6 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 		// stdin → WS
 		if (input.isPaused?.()) input.resume()
 		input.on("data", (chunk: Buffer | string) => {
-			resetWatchdog()
 			if (ws.readyState !== WebSocket.OPEN) return
 			// Send with a callback: a failed send (e.g., the connection dropped
 			// between the readyState check and the actual write) surfaces as a
