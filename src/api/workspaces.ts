@@ -152,6 +152,8 @@ export interface CreateWorkspaceOptions extends WorkspaceCommandOptions {
 	templateName?: string
 	templateId?: string
 	spec?: CreateWorkspaceSpec
+	/** API token for the agent running inside the workspace. */
+	agentApiKey?: string
 }
 
 /**
@@ -176,6 +178,7 @@ export async function createWorkspace(apiKey: string, options: CreateWorkspaceOp
 	if (options.description) body.description = options.description
 	if (options.templateName) body.templateName = options.templateName
 	if (options.templateId) body.templateId = options.templateId
+	if (options.agentApiKey) body.options = { agentApiKey: options.agentApiKey }
 
 	const spec = options.spec
 	if (spec) {

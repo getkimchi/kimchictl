@@ -238,6 +238,7 @@ describe("kimchictl workspace create", () => {
 		expect(calls[0]?.body).toMatchObject({
 			templateName: "rust",
 			clientType: "harness",
+			options: { agentApiKey: "key" },
 		})
 	})
 
@@ -279,6 +280,7 @@ describe("kimchictl workspace create", () => {
 				dependencies: ["jq", "node@22"],
 				egressPolicy: { denyByDefault: false, allowed: ["*.example.com"] },
 			},
+			options: { agentApiKey: "key" },
 		})
 	})
 
