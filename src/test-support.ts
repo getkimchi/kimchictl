@@ -63,6 +63,19 @@ export function writeSharedConfigJson(home: string, value: unknown): string {
 	return configPath
 }
 
+/** Path of the shared MCP client config under a (stubbed) HOME. */
+export function sharedMcpPath(home: string): string {
+	return join(home, ".config", "mcp", "mcp.json")
+}
+
+/** Seed the shared mcp.json under a stubbed HOME (creates parent dirs). */
+export function writeSharedMcpJson(home: string, value: unknown): string {
+	const mcpPath = sharedMcpPath(home)
+	mkdirSync(dirname(mcpPath), { recursive: true })
+	writeFileSync(mcpPath, JSON.stringify(value, null, 2))
+	return mcpPath
+}
+
 /** Capture console.log / console.error; restore() in afterEach (or rely on vi.restoreAllMocks). */
 export function captureConsole(): { lines: string[]; errors: string[] } {
 	const lines: string[] = []

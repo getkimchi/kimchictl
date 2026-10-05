@@ -1,6 +1,7 @@
 import { clearSharedAuth, readSavedApiKey } from "../auth/auth-file.js"
 import { readApiKeyFromConfig, writeApiKeyToConfig } from "../auth/config-file.js"
 import { resolveAuthJsonPath, resolveConfigJsonPath } from "../auth/paths.js"
+import { readCastMcpApiKey, resolveMcpJsonPath, writeCastMcpServer } from "../mcp/config-file.js"
 import { parseFlags } from "./flags.js"
 import { confirm, isInteractive } from "./prompt.js"
 
@@ -14,8 +15,9 @@ export interface LogoutDeps {
 
 /**
  * `kimchictl logout` — remove the shared Kimchi credential from BOTH
- * auth.json and config.json. This signs out the kimchi coding harness too
- * (the credential is shared by design), which the user must acknowledge.
+ * auth.json and config.json, plus the `cast-mcp` entry in mcp.json. This
+ * signs out the kimchi coding harness too (the credential is shared by
+ * design), which the user must acknowledge.
  */
 export async function runLogout(args: string[], deps: LogoutDeps = {}): Promise<number> {
 	const { values } = parseFlags("logout", args, {
@@ -25,8 +27,12 @@ export async function runLogout(args: string[], deps: LogoutDeps = {}): Promise<
 
 	const authPath = resolveAuthJsonPath(env)
 	const configPath = resolveConfigJsonPath(env)
+	const mcpPath = resolveMcpJsonPath(env)
 
-	const hasCredential = readSavedApiKey(authPath) !== undefined || readApiKeyFromConfig(configPath) !== undefined
+	const hasCredential =
+		readSavedApiKey(authPath) !== undefined ||
+		readApiKeyFromConfig(configPath) !== undefined ||
+		readCastMcpApiKey(mcpPath) !== undefined
 	if (!hasCredential) {
 		console.log("Not logged in.")
 		return 0
@@ -48,6 +54,7 @@ export async function runLogout(args: string[], deps: LogoutDeps = {}): Promise<
 
 	await clearSharedAuth(authPath)
 	writeApiKeyToConfig(configPath, undefined)
+	writeCastMcpServer(mcpPath, undefined)
 	console.log("✓ Logged out of Kimchi (kimchictl and the kimchi harness).")
 	return 0
 }

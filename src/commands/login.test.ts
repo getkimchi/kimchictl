@@ -7,6 +7,7 @@ import {
 	jsonResponse,
 	makeTempDir,
 	sharedConfigPath,
+	sharedMcpPath,
 	stubAgentDirEnv,
 	stubFetch,
 } from "../test-support.js"
@@ -21,7 +22,7 @@ afterEach(() => {
 const aiEnablerOnlyFetch = stubFetch(async () => jsonResponse({ models: [{ slug: "m1", provider: "ai-enabler" }] }))
 
 describe("kimchictl login --api-key", () => {
-	it("stores the key in auth.json and config.json (shared with the harness)", async () => {
+	it("stores the key in auth.json, config.json, and mcp.json (shared with the harness and MCP tooling)", async () => {
 		const dir = makeTempDir()
 		const { home } = stubAgentDirEnv(dir)
 		const { lines, errors } = captureConsole()
@@ -43,6 +44,15 @@ describe("kimchictl login --api-key", () => {
 			"kimchi-dev/anthropic": { type: "api_key", key: "test-key" },
 		})
 		expect(JSON.parse(readFileSync(sharedConfigPath(home), "utf-8"))).toEqual({ apiKey: "test-key" })
+		expect(JSON.parse(readFileSync(sharedMcpPath(home), "utf-8"))).toEqual({
+			mcpServers: {
+				"cast-mcp": {
+					type: "http",
+					url: "https://api.cast.ai/mcp",
+					headers: { Authorization: "Bearer test-key" },
+				},
+			},
+		})
 		expect(lines.some((l) => l.includes("Logged in to Kimchi"))).toBe(true)
 		// First login finishes the SSH integration automatically (with notice).
 		expect(errors.some((l) => l.includes("SSH integration configured"))).toBe(true)
