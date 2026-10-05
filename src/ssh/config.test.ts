@@ -12,6 +12,7 @@ import {
 	type SshPaths,
 	setupSshIntegration,
 	sshConfigContent,
+	sshHostPatterns,
 	uninstallSshIntegration,
 } from "./config.js"
 
@@ -49,7 +50,7 @@ describe("setupSshIntegration", () => {
 		const userConfig = readFileSync(paths.userSshConfig, "utf-8")
 		expect(userConfig).toBe(`${SSH_INCLUDE_BEGIN}\nInclude ${paths.sshConfig}\n# <<< kimchictl managed include <<<\n`)
 		expect(notes).toEqual([
-			`wrote ${paths.sshConfig} (Host *.${DOMAIN})`,
+			`wrote ${paths.sshConfig} (Host *.${DOMAIN} *.remote.us-1.kimchi.dev)`,
 			`added Include block to ${paths.userSshConfig}`,
 		])
 	})
@@ -144,6 +145,22 @@ describe("isSshIntegrationConfigured", () => {
 
 		expect(await isSshIntegrationConfigured(paths, DOMAIN, "/new/location/kimchictl")).toBe(false)
 		expect(await isSshIntegrationConfigured(paths, DOMAIN, "/old/location/kimchictl")).toBe(true)
+	})
+})
+
+describe("sshConfigContent / sshHostPatterns", () => {
+	it("matches the production domain and its us-1 region alias", () => {
+		expect(sshHostPatterns("remote.kimchi.dev")).toEqual(["remote.kimchi.dev", "remote.us-1.kimchi.dev"])
+		expect(sshConfigContent("remote.kimchi.dev", "/kh", "kimchictl")).toContain(
+			"Host *.remote.kimchi.dev *.remote.us-1.kimchi.dev\n",
+		)
+	})
+
+	it("keeps derived and custom domains single-region (no alias guessing)", () => {
+		for (const domain of ["remote.dev.kimchi.dev", "custom.example"]) {
+			expect(sshHostPatterns(domain)).toEqual([domain])
+			expect(sshConfigContent(domain, "/kh", "kimchictl")).toContain(`Host *.${domain}\n`)
+		}
 	})
 })
 

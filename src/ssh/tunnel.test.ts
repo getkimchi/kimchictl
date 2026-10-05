@@ -26,6 +26,8 @@ describe("workspaceIdFromRef", () => {
 	it("keeps bare refs and strips a domain suffix", () => {
 		expect(workspaceIdFromRef("ws-1")).toBe("ws-1")
 		expect(workspaceIdFromRef("ws-1.remote.kimchi.dev")).toBe("ws-1")
+		// Region-pinned alias from the generated ssh_config's Host line (%h).
+		expect(workspaceIdFromRef("ws-1.remote.us-1.kimchi.dev")).toBe("ws-1")
 	})
 })
 

@@ -7,8 +7,9 @@ import { dirname, join, resolve } from "node:path"
  * Native SSH integration (TS port of kap:internal/ssh/setup.go).
  *
  * Layout:
- *   ~/.config/kimchi/kimchictl/ssh_config   — `Host *.<domain>` wildcard routing
- *                                             through `kimchictl ssh proxy %h` as ProxyCommand
+ *   ~/.config/kimchi/kimchictl/ssh_config   — `Host *.<domain> [region aliases…]`
+ *                                             wildcard routing through
+ *                                             `kimchictl ssh proxy %h` as ProxyCommand
  *   ~/.config/kimchi/kimchictl/known_hosts  — dedicated known_hosts for workspace hosts
  *   ~/.ssh/config                           — gets a marker-wrapped `Include` block
  *
@@ -91,9 +92,28 @@ export function resolveProxyCommandTarget(execPath: string = process.execPath, e
 	return "kimchictl"
 }
 
+/**
+ * Region-pinned aliases of a wildcard domain: same workspaces, reachable via
+ * an explicit regional hostname (`<name>.remote.<region>.kimchi.dev`). Only
+ * the production default advertises region hostnames today; endpoint-derived
+ * dev domains are treated as single-region until the API says otherwise.
+ */
+const REGION_ALIASES: Record<string, string[]> = {
+	"remote.kimchi.dev": ["remote.us-1.kimchi.dev"],
+}
+
+/** The domains the generated ssh_config's Host line matches, primary first. */
+export function sshHostPatterns(domain: string): string[] {
+	return [domain, ...(REGION_ALIASES[domain] ?? [])]
+}
+
 export function sshConfigContent(domain: string, knownHostsPath: string, proxyTarget: string): string {
+	// Host accepts multiple space-separated patterns; one block serves every alias.
+	const hosts = sshHostPatterns(domain)
+		.map((d) => `*.${d}`)
+		.join(" ")
 	return (
-		`Host *.${domain}\n` +
+		`Host ${hosts}\n` +
 		`    ProxyCommand ${proxyTarget} ssh proxy %h\n` +
 		`    UserKnownHostsFile ${knownHostsPath}\n` +
 		`    StrictHostKeyChecking accept-new\n` +
@@ -143,7 +163,10 @@ export async function setupSshIntegration(options: {
 	const previous = existsSync(paths.sshConfig) ? await readFile(paths.sshConfig, "utf-8") : undefined
 	if (previous !== content) {
 		await writePrivateFile(paths.sshConfig, content)
-		notes.push(`wrote ${paths.sshConfig} (Host *.${domain})`)
+		const hosts = sshHostPatterns(domain)
+			.map((d) => `*.${d}`)
+			.join(" ")
+		notes.push(`wrote ${paths.sshConfig} (Host ${hosts})`)
 	}
 
 	let userConfig = ""

@@ -48,7 +48,7 @@ describe("kimchictl ssh setup", () => {
 		expect(first).toBe(0)
 		expect(lines.some((line) => line.startsWith("✓ SSH integration configured"))).toBe(true)
 		const sshConfigPath = join(process.env.KIMCHICTL_HOME ?? "", "ssh_config")
-		expect(readFileSync(sshConfigPath, "utf-8")).toContain("Host *.remote.kimchi.dev")
+		expect(readFileSync(sshConfigPath, "utf-8")).toContain("Host *.remote.kimchi.dev *.remote.us-1.kimchi.dev")
 		expect(readFileSync(join(process.env.HOME ?? "", ".ssh", "config"), "utf-8")).toContain("kimchictl managed include")
 
 		lines.length = 0
