@@ -238,8 +238,9 @@ describe("kimchictl workspace create", () => {
 		expect(calls[0]?.body).toMatchObject({
 			templateName: "rust",
 			clientType: "harness",
-			options: { agentApiKey: "key" },
 		})
+		// The workspace provisions its own agent token — no user credential is sent.
+		expect(calls[0]?.body).not.toHaveProperty("options")
 	})
 
 	it("sends spec fields to the API", async () => {
@@ -280,8 +281,8 @@ describe("kimchictl workspace create", () => {
 				dependencies: ["jq", "node@22"],
 				egressPolicy: { denyByDefault: false, allowed: ["*.example.com"] },
 			},
-			options: { agentApiKey: "key" },
 		})
+		expect(calls[0]?.body).not.toHaveProperty("options")
 	})
 
 	it("rejects positional arguments and bad timeouts as usage errors", async () => {

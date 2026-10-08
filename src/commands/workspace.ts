@@ -217,10 +217,6 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 		templateName,
 		templateId,
 		spec,
-		// Pass the user's API key as the workspace agent's credential so the
-		// in-workspace agent can authenticate back to the control plane
-		// (mirrors kap's --kimchi-api-key, but automatic).
-		agentApiKey: key,
 		fetch: deps.fetch,
 	})
 	// Success-path info goes to stdout (terminals that color stderr red made
