@@ -6,8 +6,10 @@ import {
 	cleanupTempDirs,
 	makeTempDir,
 	sharedConfigPath,
+	sharedMcpPath,
 	stubAgentDirEnv,
 	writeSharedConfigJson,
+	writeSharedMcpJson,
 } from "../test-support.js"
 import { runLogout } from "./logout.js"
 
@@ -27,10 +29,16 @@ function seedCredentials(dir: string, home: string): void {
 		}),
 	)
 	writeSharedConfigJson(home, { apiKey: "key", other: true })
+	writeSharedMcpJson(home, {
+		mcpServers: {
+			"cast-mcp": { type: "http", url: "https://api.cast.ai/mcp", headers: { Authorization: "Bearer key" } },
+			other: { type: "stdio", command: "keep" },
+		},
+	})
 }
 
 describe("kimchictl logout", () => {
-	it("removes shared credentials with --force (both files, other entries preserved)", async () => {
+	it("removes shared credentials with --force (all three files, other entries preserved)", async () => {
 		const dir = makeTempDir()
 		const { home } = stubAgentDirEnv(dir)
 		seedCredentials(dir, home)
@@ -42,6 +50,9 @@ describe("kimchictl logout", () => {
 			anthropic: { type: "api_key", key: "keep" },
 		})
 		expect(JSON.parse(readFileSync(sharedConfigPath(home), "utf-8"))).toEqual({ other: true })
+		expect(JSON.parse(readFileSync(sharedMcpPath(home), "utf-8"))).toEqual({
+			mcpServers: { other: { type: "stdio", command: "keep" } },
+		})
 		expect(lines.some((l) => l.includes("Logged out"))).toBe(true)
 	})
 
@@ -67,6 +78,7 @@ describe("kimchictl logout", () => {
 		expect(lines.some((l) => l.includes("Aborted"))).toBe(true)
 		expect(JSON.parse(readFileSync(join(dir, "auth.json"), "utf-8"))["kimchi-dev"]).toBeDefined()
 		expect(JSON.parse(readFileSync(sharedConfigPath(home), "utf-8")).apiKey).toBe("key")
+		expect(JSON.parse(readFileSync(sharedMcpPath(home), "utf-8")).mcpServers["cast-mcp"]).toBeDefined()
 	})
 
 	it("requires --force when non-interactive", async () => {
@@ -78,6 +90,22 @@ describe("kimchictl logout", () => {
 		expect(await runLogout([], { interactive: false })).toBe(1)
 		expect(errors.some((l) => l.includes("--force"))).toBe(true)
 		expect(JSON.parse(readFileSync(join(dir, "auth.json"), "utf-8"))["kimchi-dev"]).toBeDefined()
+	})
+
+	it("proceeds when only the mcp.json entry remains", async () => {
+		const dir = makeTempDir()
+		const { home } = stubAgentDirEnv(dir)
+		writeSharedMcpJson(home, {
+			mcpServers: {
+				"cast-mcp": { type: "http", url: "https://api.cast.ai/mcp", headers: { Authorization: "Bearer key" } },
+			},
+		})
+		const { lines } = captureConsole()
+
+		expect(await runLogout(["--force"])).toBe(0)
+
+		expect(JSON.parse(readFileSync(sharedMcpPath(home), "utf-8"))).toEqual({ mcpServers: {} })
+		expect(lines.some((l) => l.includes("Logged out"))).toBe(true)
 	})
 
 	it("reports when already logged out", async () => {

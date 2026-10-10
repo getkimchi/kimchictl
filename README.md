@@ -81,7 +81,7 @@ Suspend/resume exposed by the API today: **none**. `workspace suspend` / `worksp
 
 ## Sharing auth with the kimchi agent
 
-`kimchictl login` writes the same credential files the kimchi coding agent uses — `~/.config/kimchi/harness/auth.json` (provider `kimchi-dev`) and the `apiKey` field of `~/.config/kimchi/config.json` — so either tool can sign you in and the other is logged in. `KIMCHI_API_KEY` overrides the file-based credentials.
+`kimchictl login` writes the same credential files the kimchi coding agent uses — `~/.config/kimchi/harness/auth.json` (provider `kimchi-dev`) and the `apiKey` field of `~/.config/kimchi/config.json` — so either tool can sign you in and the other is logged in. Login also seeds a `cast-mcp` HTTP server entry (`https://api.cast.ai/mcp`, with the key as a Bearer token) in `~/.config/mcp/mcp.json` for MCP-aware tooling; `kimchictl logout` removes that entry along with the rest. `KIMCHI_API_KEY` overrides the file-based credentials.
 
 ## Environment variables
 

@@ -3,6 +3,7 @@ import { authenticateViaBrowser } from "../auth/browser-login.js"
 import { writeApiKeyToConfig } from "../auth/config-file.js"
 import { fetchKimchiProviderIds, ModelsFetchError } from "../auth/models-providers.js"
 import { resolveAuthJsonPath, resolveConfigJsonPath, resolveModelsJsonPath } from "../auth/paths.js"
+import { resolveMcpJsonPath, writeCastMcpServer } from "../mcp/config-file.js"
 import { ensureSshIntegration } from "../ssh/connect.js"
 import { parseFlags } from "./flags.js"
 import { isInteractive } from "./prompt.js"
@@ -22,6 +23,8 @@ export interface LoginDeps {
  *   - auth.json: one `{ type: "api_key", key }` per Kimchi provider id
  *     (ids from an existing models.json plus a fresh metadata fetch)
  *   - config.json: the `apiKey` field
+ *   - ~/.config/mcp/mcp.json: a `cast-mcp` http server entry carrying the key
+ *     as a Bearer token
  * …so the harness picks the login up without its own `kimchi login`.
  */
 export async function runLogin(args: string[], deps: LoginDeps = {}): Promise<number> {
@@ -33,6 +36,7 @@ export async function runLogin(args: string[], deps: LoginDeps = {}): Promise<nu
 	const authPath = resolveAuthJsonPath(env)
 	const configPath = resolveConfigJsonPath(env)
 	const modelsPath = resolveModelsJsonPath(env)
+	const mcpPath = resolveMcpJsonPath(env)
 
 	let apiKey: string
 	const apiKeyFlag = values["api-key"]
@@ -84,6 +88,7 @@ export async function runLogin(args: string[], deps: LoginDeps = {}): Promise<nu
 	const providerIds = [...new Set([...kimchiProviderIdsFromModelsJson(modelsPath), ...fetchedIds])]
 	await syncSharedAuth(authPath, apiKey, providerIds)
 	writeApiKeyToConfig(configPath, apiKey)
+	writeCastMcpServer(mcpPath, apiKey)
 
 	console.log(`✓ Logged in to Kimchi — credentials saved to ${authPath}`)
 	console.log("  Shared with the kimchi coding harness; no second login needed there.")
