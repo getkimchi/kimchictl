@@ -99,7 +99,7 @@ export function resolveProxyCommandTarget(execPath: string = process.execPath, e
  * dev domains are treated as single-region until the API says otherwise.
  */
 const REGION_ALIASES: Record<string, string[]> = {
-	"remote.kimchi.dev": ["remote.us-1.kimchi.dev"],
+	"remote.kimchi.dev": ["remote.*.kimchi.dev"],
 }
 
 /** The domains the generated ssh_config's Host line matches, primary first. */
