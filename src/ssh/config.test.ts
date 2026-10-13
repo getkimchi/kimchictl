@@ -50,7 +50,7 @@ describe("setupSshIntegration", () => {
 		const userConfig = readFileSync(paths.userSshConfig, "utf-8")
 		expect(userConfig).toBe(`${SSH_INCLUDE_BEGIN}\nInclude ${paths.sshConfig}\n# <<< kimchictl managed include <<<\n`)
 		expect(notes).toEqual([
-			`wrote ${paths.sshConfig} (Host *.${DOMAIN} *.remote.us-1.kimchi.dev *.remote.us-2.kimchi.dev)`,
+			`wrote ${paths.sshConfig} (Host *.${DOMAIN} *.remote.*.kimchi.dev)`,
 			`added Include block to ${paths.userSshConfig}`,
 		])
 	})
@@ -149,14 +149,10 @@ describe("isSshIntegrationConfigured", () => {
 })
 
 describe("sshConfigContent / sshHostPatterns", () => {
-	it("matches the production domain and its us-1/us-2 region aliases", () => {
-		expect(sshHostPatterns("remote.kimchi.dev")).toEqual([
-			"remote.kimchi.dev",
-			"remote.us-1.kimchi.dev",
-			"remote.us-2.kimchi.dev",
-		])
+	it("matches the production domain and its wildcard region alias", () => {
+		expect(sshHostPatterns("remote.kimchi.dev")).toEqual(["remote.kimchi.dev", "remote.*.kimchi.dev"])
 		expect(sshConfigContent("remote.kimchi.dev", "/kh", "kimchictl")).toContain(
-			"Host *.remote.kimchi.dev *.remote.us-1.kimchi.dev *.remote.us-2.kimchi.dev\n",
+			"Host *.remote.kimchi.dev *.remote.*.kimchi.dev\n",
 		)
 	})
 
