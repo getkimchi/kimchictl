@@ -1,4 +1,4 @@
-import { checkResponse, fetchWithTimeout, resolveEndpoint } from "./http.js"
+import { authHeaders, checkResponse, fetchWithTimeout, resolveEndpoint } from "./http.js"
 import type { ApiOptions } from "./types.js"
 import { RemoteNetworkError } from "./types.js"
 
@@ -22,7 +22,7 @@ export async function exchangeWorkspaceToken(
 		url,
 		{
 			method: "POST",
-			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+			headers: authHeaders(apiKey, options?.orgId, { "Content-Type": "application/json" }),
 			body: JSON.stringify({ workspaceId }),
 		},
 		fetchImpl,
@@ -58,7 +58,7 @@ export async function resumeWorkspace(
 		url,
 		{
 			method: "POST",
-			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+			headers: authHeaders(apiKey, options.orgId, { "Content-Type": "application/json" }),
 			body: JSON.stringify({}),
 		},
 		fetchImpl,

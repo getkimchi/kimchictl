@@ -1,4 +1,4 @@
-import { fetchWithTimeout, resolveEndpoint } from "./http.js"
+import { authHeaders, fetchWithTimeout, resolveEndpoint } from "./http.js"
 import type { ApiOptions } from "./types.js"
 
 /**
@@ -22,10 +22,7 @@ export async function getMe(
 		url,
 		{
 			method: "GET",
-			headers: {
-				Authorization: `Bearer ${apiKey}`,
-				Accept: "application/json",
-			},
+			headers: authHeaders(apiKey, options?.organizationId, { Accept: "application/json" }),
 		},
 		fetchImpl,
 		30_000,
