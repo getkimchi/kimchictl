@@ -45,7 +45,7 @@ export interface WorkspaceCommandOptions extends ApiOptions {
 }
 
 async function resolveOrgId(apiKey: string, options?: WorkspaceCommandOptions): Promise<string> {
-	return options?.orgId ?? (await verifyApiKey(apiKey, options))
+	return options?.orgId ?? options?.organizationId ?? (await verifyApiKey(apiKey, options))
 }
 
 export async function listWorkspaces(apiKey: string, options?: WorkspaceCommandOptions): Promise<Workspace[]> {
@@ -61,13 +61,12 @@ export async function listWorkspaces(apiKey: string, options?: WorkspaceCommandO
 		for (let page = 0; page < LIST_WORKSPACES_PAGE_HARD_CAP; page++) {
 			const params = new URLSearchParams()
 			params.set("page.limit", String(LIST_WORKSPACES_PAGE_LIMIT))
-			params.set("clientType", HARNESS_CLIENT_TYPE)
 			if (cursor) params.set("page.cursor", cursor)
 
 			const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspaces?${params.toString()}`
 			const resp = await fetchWithTimeout(
 				url,
-				{ method: "GET", headers: authHeaders(apiKey, options?.organizationId, { Accept: "application/json" }) },
+				{ method: "GET", headers: authHeaders(apiKey, orgId, { Accept: "application/json" }) },
 				fetchImpl,
 				30_000,
 				options?.signal,
@@ -112,7 +111,7 @@ export async function getWorkspace(apiKey: string, id: string, options?: Workspa
 	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspaces/${encodeURIComponent(id)}`
 	const resp = await fetchWithTimeout(
 		url,
-		{ method: "GET", headers: authHeaders(apiKey, options?.organizationId) },
+		{ method: "GET", headers: authHeaders(apiKey, orgId) },
 		fetchImpl,
 		30_000,
 		options?.signal,
@@ -204,7 +203,7 @@ export async function createWorkspace(apiKey: string, options: CreateWorkspaceOp
 		url,
 		{
 			method: "POST",
-			headers: authHeaders(apiKey, options?.organizationId, { "Content-Type": "application/json" }),
+			headers: authHeaders(apiKey, orgId, { "Content-Type": "application/json" }),
 			body: JSON.stringify(body),
 		},
 		fetchImpl,
@@ -225,7 +224,7 @@ export async function deleteWorkspace(apiKey: string, id: string, options?: Work
 	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspaces/${encodeURIComponent(id)}`
 	const resp = await fetchWithTimeout(
 		url,
-		{ method: "DELETE", headers: authHeaders(apiKey, options?.organizationId) },
+		{ method: "DELETE", headers: authHeaders(apiKey, orgId) },
 		fetchImpl,
 		30_000,
 		options?.signal,

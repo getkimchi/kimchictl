@@ -44,7 +44,7 @@ export interface WorkspaceTemplateOptions extends ApiOptions {
 }
 
 async function resolveOrgId(apiKey: string, options?: WorkspaceTemplateOptions): Promise<string> {
-	return options?.orgId ?? (await verifyApiKey(apiKey, options))
+	return options?.orgId ?? options?.organizationId ?? (await verifyApiKey(apiKey, options))
 }
 
 export class TemplateNotFoundError extends Error {
@@ -86,7 +86,7 @@ export async function createWorkspaceTemplate(
 		url,
 		{
 			method: "POST",
-			headers: authHeaders(apiKey, options?.organizationId, { "Content-Type": "application/json" }),
+			headers: authHeaders(apiKey, orgId, { "Content-Type": "application/json" }),
 			body: JSON.stringify(body),
 		},
 		fetchImpl,
@@ -113,7 +113,7 @@ export async function listWorkspaceTemplates(
 	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspace-templates?${params}`
 	const resp = await fetchWithTimeout(
 		url,
-		{ method: "GET", headers: authHeaders(apiKey, options?.organizationId, { Accept: "application/json" }) },
+		{ method: "GET", headers: authHeaders(apiKey, orgId, { Accept: "application/json" }) },
 		fetchImpl,
 		30_000,
 		options?.signal,
@@ -143,7 +143,7 @@ export async function getWorkspaceTemplate(
 	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspace-templates/${encodeURIComponent(id)}`
 	const resp = await fetchWithTimeout(
 		url,
-		{ method: "GET", headers: authHeaders(apiKey, options?.organizationId) },
+		{ method: "GET", headers: authHeaders(apiKey, orgId) },
 		fetchImpl,
 		30_000,
 		options?.signal,
