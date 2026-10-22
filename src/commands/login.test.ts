@@ -218,7 +218,7 @@ describe("kimchictl login --sso", () => {
 		expect(config).toEqual({ llmEndpoint: "https://x" })
 		// The org header is stamped on models.json's Kimchi providers.
 		const models = JSON.parse(readFileSync(join(dir, "models.json"), "utf-8"))
-		expect(models.providers["kimchi-dev"].headers["X-Organization-ID"]).toBe("org-beta")
+		expect(models.providers["kimchi-dev"].headers["X-CastAi-Organization-Id"]).toBe("org-beta")
 	})
 
 	it("fails with guidance when the SSO flow errors", async () => {

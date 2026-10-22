@@ -8,7 +8,7 @@ export function resolveEndpoint(options?: ApiOptions): string {
 
 /**
  * Standard auth headers for control-plane requests: the bearer plus, when
- * the credential is org-scoped (CAST AI SSO), the `X-Organization-ID` the
+ * the credential is org-scoped (CAST AI SSO), the `X-CastAi-Organization-Id` the
  * platform requires to route the request.
  */
 export function authHeaders(
@@ -18,7 +18,7 @@ export function authHeaders(
 ): Record<string, string> {
 	return {
 		Authorization: `Bearer ${bearer}`,
-		...(organizationId ? { "X-Organization-ID": organizationId } : {}),
+		...(organizationId ? { "X-CastAi-Organization-Id": organizationId } : {}),
 		...extra,
 	}
 }

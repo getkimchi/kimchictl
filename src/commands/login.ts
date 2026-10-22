@@ -146,7 +146,7 @@ export async function runLogin(args: string[], deps: LoginDeps = {}): Promise<nu
 		writeApiKeyToConfig(configPath, undefined)
 
 		// Stamp the selected organization onto every Kimchi provider entry in
-		// models.json — the gateway routes by X-Organization-ID.
+		// models.json — the gateway routes by X-CastAi-Organization-Id.
 		applyOrganizationHeader(modelsPath, credential.orgId)
 
 		console.log(
@@ -207,7 +207,7 @@ export async function runLogin(args: string[], deps: LoginDeps = {}): Promise<nu
 	await syncSharedAuth(authPath, apiKey, providerIds)
 	writeApiKeyToConfig(configPath, apiKey)
 
-	// Key-based logins carry no organization: drop a stale X-Organization-ID
+	// Key-based logins carry no organization: drop a stale X-CastAi-Organization-Id
 	// a previous CAST AI SSO login left in models.json.
 	applyOrganizationHeader(modelsPath, undefined)
 

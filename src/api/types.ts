@@ -43,7 +43,7 @@ export interface ApiOptions {
 	 *   3. production default https://app.kimchi.dev/api
 	 */
 	endpoint?: string
-	/** CAST AI organization id — sent as `X-Organization-ID` on every request
+	/** CAST AI organization id — sent as `X-CastAi-Organization-Id` on every request
 	 * when present (org-scoped SSO credentials). */
 	organizationId?: string
 	/** Override global fetch (tests). */

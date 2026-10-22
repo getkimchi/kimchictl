@@ -89,7 +89,7 @@ Suspend/resume exposed by the API today: **none**. `workspace suspend` / `worksp
 
 The resulting credential is a refreshable, organization-scoped `{ type: "oauth" }` entry — the same shape the kimchi harness writes into the shared `auth.json`. Whichever tool performs the SSO login, the other picks it up: a harness login gives kimchictl the stored organization (no re-selection), and vice versa. Expired tokens are renewed transparently; if the refresh token is revoked you are asked to sign in again.
 
-Every platform request carries the selected organization as the `X-Organization-ID` header. The browser methods (SSO and the legacy API-key handoff) are interactive-only; use `--api-key` for CI. `KIMCHICTL_LOGIN_METHOD=sso|browser|api-key` preselects the interactive menu's method.
+Every platform request carries the selected organization as the `X-CastAi-Organization-Id` header. The browser methods (SSO and the legacy API-key handoff) are interactive-only; use `--api-key` for CI. `KIMCHICTL_LOGIN_METHOD=sso|browser|api-key` preselects the interactive menu's method.
 
 The SSO flow uses a fixed loopback callback at `http://localhost:8765/callback` (the redirect URI registered with the Auth0 application); only one CAST AI sign-in can run at a time per machine — across kimchictl *and* the harness.
 

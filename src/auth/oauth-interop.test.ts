@@ -140,9 +140,9 @@ describe("applyOrganizationHeader", () => {
 
 		applyOrganizationHeader(modelsPath, "org-9")
 		let providers = JSON.parse(readFileSync(modelsPath, "utf-8")).providers
-		expect(providers["kimchi-dev"].headers["X-Organization-ID"]).toBe("org-9")
+		expect(providers["kimchi-dev"].headers["X-CastAi-Organization-Id"]).toBe("org-9")
 		expect(providers["kimchi-dev"].headers["X-Provider-Type"]).toBe("ai-enabler")
-		expect(providers["kimchi-dev/openai"].headers["X-Organization-ID"]).toBe("org-9")
+		expect(providers["kimchi-dev/openai"].headers["X-CastAi-Organization-Id"]).toBe("org-9")
 		expect(providers["kimi-coding"].headers).toBeUndefined()
 		expect(providers.ollama.headers).toBeUndefined()
 
