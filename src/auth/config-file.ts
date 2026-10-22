@@ -34,6 +34,17 @@ export function readApiKeyFromConfig(configPath: string): string | undefined {
 	return undefined
 }
 
+/**
+ * The region the harness persisted at its SSO login (`region` field; the
+ * harness's writeRegion). "us" | "eu" or undefined when unset/unknown —
+ * callers default to us. kimchictl never writes this field.
+ */
+export function readRegionFromConfig(configPath: string): "us" | "eu" | undefined {
+	const raw = readConfigRaw(configPath)
+	const value = raw.region
+	return value === "us" || value === "eu" ? value : undefined
+}
+
 /** Set the apiKey field (pass undefined to remove it). Preserves all other fields. */
 export function writeApiKeyToConfig(configPath: string, apiKey: string | undefined): void {
 	const raw = readConfigRaw(configPath)

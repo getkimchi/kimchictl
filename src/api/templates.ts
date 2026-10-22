@@ -1,4 +1,4 @@
-import { checkResponse, fetchWithTimeout, resolveEndpoint } from "./http.js"
+import { authHeaders, checkResponse, fetchWithTimeout, resolveEndpoint } from "./http.js"
 import { verifyApiKey } from "./keys.js"
 import type { ApiOptions } from "./types.js"
 import { RemoteNetworkError } from "./types.js"
@@ -86,7 +86,7 @@ export async function createWorkspaceTemplate(
 		url,
 		{
 			method: "POST",
-			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+			headers: authHeaders(apiKey, options?.organizationId, { "Content-Type": "application/json" }),
 			body: JSON.stringify(body),
 		},
 		fetchImpl,
@@ -113,7 +113,7 @@ export async function listWorkspaceTemplates(
 	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspace-templates?${params}`
 	const resp = await fetchWithTimeout(
 		url,
-		{ method: "GET", headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } },
+		{ method: "GET", headers: authHeaders(apiKey, options?.organizationId, { Accept: "application/json" }) },
 		fetchImpl,
 		30_000,
 		options?.signal,
@@ -143,7 +143,7 @@ export async function getWorkspaceTemplate(
 	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspace-templates/${encodeURIComponent(id)}`
 	const resp = await fetchWithTimeout(
 		url,
-		{ method: "GET", headers: { Authorization: `Bearer ${apiKey}` } },
+		{ method: "GET", headers: authHeaders(apiKey, options?.organizationId) },
 		fetchImpl,
 		30_000,
 		options?.signal,

@@ -6,6 +6,23 @@ export function resolveEndpoint(options?: ApiOptions): string {
 	return options?.endpoint ?? process.env.KIMCHI_REMOTE_ENDPOINT ?? "https://app.kimchi.dev/api"
 }
 
+/**
+ * Standard auth headers for control-plane requests: the bearer plus, when
+ * the credential is org-scoped (CAST AI SSO), the `X-Organization-ID` the
+ * platform requires to route the request.
+ */
+export function authHeaders(
+	bearer: string,
+	organizationId?: string,
+	extra: Record<string, string> = {},
+): Record<string, string> {
+	return {
+		Authorization: `Bearer ${bearer}`,
+		...(organizationId ? { "X-Organization-ID": organizationId } : {}),
+		...extra,
+	}
+}
+
 export async function fetchWithTimeout(
 	url: string,
 	init: RequestInit,

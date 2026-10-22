@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { basename, dirname, join } from "node:path"
 import { isDeepStrictEqual } from "node:util"
+import type { SsoCredential } from "./oauth.js"
 import { isKimchiProvider } from "./provider-ids.js"
 
 /**
@@ -34,6 +35,84 @@ export function readSavedApiKey(authPath: string): string | undefined {
 		return entry.key
 	}
 	return undefined
+}
+
+/**
+ * Read the shared CAST AI SSO credential, if the `kimchi-dev` entry is an
+ * oauth one (written by this tool or the harness — same shape). The extras
+ * (region/tokenUrl/clientId/useIdToken/orgId…) are the refresh and org
+ * contract; unknown extra fields are preserved as-is for forward
+ * compatibility with harness-side additions.
+ */
+export function readSharedOAuthCredential(authPath: string): SsoCredential | undefined {
+	const entry = readAuthJson(authPath)["kimchi-dev"]
+	if (!entry || typeof entry !== "object" || (entry as { type?: unknown }).type !== "oauth") return undefined
+	const c = entry as Record<string, unknown>
+	if (typeof c.access !== "string" || typeof c.refresh !== "string" || typeof c.expires !== "number") {
+		return undefined
+	}
+	if (typeof c.tokenUrl !== "string" || typeof c.clientId !== "string") return undefined
+	return {
+		type: "oauth",
+		access: c.access,
+		refresh: c.refresh,
+		expires: c.expires,
+		region: typeof c.region === "string" ? c.region : "us",
+		tokenUrl: c.tokenUrl,
+		clientId: c.clientId,
+		...(typeof c.audience === "string" ? { audience: c.audience } : {}),
+		useIdToken: c.useIdToken !== false,
+		...(typeof c.idToken === "string" ? { idToken: c.idToken } : {}),
+		...(typeof c.accessToken === "string" ? { accessToken: c.accessToken } : {}),
+		...(typeof c.orgId === "string" ? { orgId: c.orgId } : {}),
+		...(typeof c.orgName === "string" ? { orgName: c.orgName } : {}),
+	}
+}
+
+/**
+ * Replace all Kimchi-managed entries in auth.json with the OAuth credential
+ * fan-out: `{ ...credential }` for every provider id (deduped, "kimchi-dev"
+ * always included). Same clear-then-write semantics and atomic write as
+ * `syncSharedAuth`; non-Kimchi providers are preserved untouched. The
+ * written shape is byte-identical to the harness's
+ * `syncOAuthCredentialToKimchiProviders`, so either tool's login is usable
+ * by the other.
+ */
+export async function syncSharedOAuth(
+	authPath: string,
+	credential: SsoCredential,
+	providerIds: readonly string[],
+): Promise<void> {
+	mkdirSync(dirname(authPath), { recursive: true, mode: 0o700 })
+
+	const authExists = existsSync(authPath)
+	const credentials = authExists ? readAuthJson(authPath) : {}
+	const nextCredentials = { ...credentials }
+	for (const providerId of Object.keys(nextCredentials)) {
+		if (isKimchiProvider(providerId)) {
+			delete nextCredentials[providerId]
+		}
+	}
+
+	const ids = new Set([...providerIds.filter(isKimchiProvider), "kimchi-dev"])
+	for (const providerId of ids) {
+		nextCredentials[providerId] = { ...credential }
+	}
+
+	if (authExists && isDeepStrictEqual(credentials, nextCredentials)) {
+		chmodSync(authPath, 0o600)
+		return
+	}
+
+	const tempPath = join(dirname(authPath), `.${basename(authPath)}.tmp-${process.pid}`)
+	try {
+		writeFileSync(tempPath, `${JSON.stringify(nextCredentials, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 })
+		renameSync(tempPath, authPath)
+		chmodSync(authPath, 0o600)
+	} catch (err) {
+		rmSync(tempPath, { force: true })
+		throw err
+	}
 }
 
 /**

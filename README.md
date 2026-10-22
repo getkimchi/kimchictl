@@ -83,6 +83,16 @@ Suspend/resume exposed by the API today: **none**. `workspace suspend` / `worksp
 
 `kimchictl login` writes the same credential files the kimchi coding agent uses — `~/.config/kimchi/harness/auth.json` (provider `kimchi-dev`) and the `apiKey` field of `~/.config/kimchi/config.json` — so either tool can sign you in and the other is logged in. `KIMCHI_API_KEY` overrides the file-based credentials.
 
+### CAST AI SSO login
+
+`kimchictl login` offers **Sign in with CAST AI (SSO)** as the recommended method (run it without flags to pick from the method menu, or pass `--sso` directly; `--region us|eu` selects the tenant, defaulting to the harness's stored region): a standard OAuth 2.0 Authorization Code + PKCE browser login against the CAST AI Auth0 tenant of the region. After the browser callback, kimchictl lists your organizations and asks you to pick one (a single-organization account is selected automatically).
+
+The resulting credential is a refreshable, organization-scoped `{ type: "oauth" }` entry — the same shape the kimchi harness writes into the shared `auth.json`. Whichever tool performs the SSO login, the other picks it up: a harness login gives kimchictl the stored organization (no re-selection), and vice versa. Expired tokens are renewed transparently; if the refresh token is revoked you are asked to sign in again.
+
+Every platform request carries the selected organization as the `X-Organization-ID` header. The browser methods (SSO and the legacy API-key handoff) are interactive-only; use `--api-key` for CI. `KIMCHICTL_LOGIN_METHOD=sso|browser|api-key` preselects the interactive menu's method.
+
+The SSO flow uses a fixed loopback callback at `http://localhost:8765/callback` (the redirect URI registered with the Auth0 application); only one CAST AI sign-in can run at a time per machine — across kimchictl *and* the harness.
+
 ## Environment variables
 
 | Variable | Purpose |
@@ -94,6 +104,11 @@ Suspend/resume exposed by the API today: **none**. `workspace suspend` / `worksp
 | `KIMCHICTL_NO_SSH_SETUP` | Skip all automatic SSH integration |
 | `KIMCHICTL_SSH_DOMAIN` | Override the workspace wildcard domain |
 | `KIMCHICTL_NO_UPDATE_CHECK` | Disable the daily background update check |
+| `KIMCHICTL_LOGIN_METHOD` | Preselect the interactive login method (`sso`\|`browser`\|`api-key`) |
+| `KIMCHI_OAUTH_CLIENT_ID` / `KIMCHI_OAUTH_CLIENT_ID_<REGION>` | SSO client id override (per-region wins) |
+| `KIMCHI_OAUTH_AUTHORIZE_URL` | SSO authorize endpoint override (dev/mock) |
+| `KIMCHI_OAUTH_TOKEN_URL` | SSO token endpoint override (dev/mock) |
+| `KIMCHI_ORGANIZATIONS_URL` | SSO user-organizations listing override (dev/mock) |
 
 ## Development
 

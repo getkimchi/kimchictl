@@ -1,4 +1,4 @@
-import { checkResponse, fetchWithTimeout, resolveEndpoint } from "./http.js"
+import { authHeaders, checkResponse, fetchWithTimeout, resolveEndpoint } from "./http.js"
 import { verifyApiKey } from "./keys.js"
 import { byteQuantityToBytes, cpuQuantityToMillicores } from "./resources.js"
 import type { ApiOptions } from "./types.js"
@@ -67,7 +67,7 @@ export async function listWorkspaces(apiKey: string, options?: WorkspaceCommandO
 			const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspaces?${params.toString()}`
 			const resp = await fetchWithTimeout(
 				url,
-				{ method: "GET", headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } },
+				{ method: "GET", headers: authHeaders(apiKey, options?.organizationId, { Accept: "application/json" }) },
 				fetchImpl,
 				30_000,
 				options?.signal,
@@ -112,7 +112,7 @@ export async function getWorkspace(apiKey: string, id: string, options?: Workspa
 	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspaces/${encodeURIComponent(id)}`
 	const resp = await fetchWithTimeout(
 		url,
-		{ method: "GET", headers: { Authorization: `Bearer ${apiKey}` } },
+		{ method: "GET", headers: authHeaders(apiKey, options?.organizationId) },
 		fetchImpl,
 		30_000,
 		options?.signal,
@@ -204,7 +204,7 @@ export async function createWorkspace(apiKey: string, options: CreateWorkspaceOp
 		url,
 		{
 			method: "POST",
-			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+			headers: authHeaders(apiKey, options?.organizationId, { "Content-Type": "application/json" }),
 			body: JSON.stringify(body),
 		},
 		fetchImpl,
@@ -225,7 +225,7 @@ export async function deleteWorkspace(apiKey: string, id: string, options?: Work
 	const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspaces/${encodeURIComponent(id)}`
 	const resp = await fetchWithTimeout(
 		url,
-		{ method: "DELETE", headers: { Authorization: `Bearer ${apiKey}` } },
+		{ method: "DELETE", headers: authHeaders(apiKey, options?.organizationId) },
 		fetchImpl,
 		30_000,
 		options?.signal,
