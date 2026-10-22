@@ -51,14 +51,14 @@ interface RegionOAuthDefaults {
 // src/pi-auth.ts constraint).
 const REGION_OAUTH_DEFAULTS: Record<SsoRegionId, RegionOAuthDefaults> = {
 	us: {
-		authorizeUrl: "https://login.cast.ai/authorize",
-		tokenUrl: "https://login.cast.ai/oauth/token",
+		authorizeUrl: "https://login.kimchi.dev/authorize",
+		tokenUrl: "https://login.kimchi.dev/oauth/token",
 		clientId: "rG3I0gwpiMzjzv1qC2W5s21UMQlNzSlS",
 		castApiUrl: "https://api.cast.ai",
 	},
 	eu: {
-		authorizeUrl: "https://login.eu.cast.ai/authorize",
-		tokenUrl: "https://login.eu.cast.ai/oauth/token",
+		authorizeUrl: "https://login.eu.kimchi.dev/authorize",
+		tokenUrl: "https://login.eu.kimchi.dev/oauth/token",
 		clientId: "Bw2sA2DJyUAN2wpGiHU72Wh2Xenw6xma",
 		castApiUrl: "https://api.eu.cast.ai",
 	},

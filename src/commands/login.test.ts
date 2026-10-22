@@ -171,7 +171,7 @@ describe("kimchictl login --sso", () => {
 		refresh: "sso-refresh",
 		expires: Date.now() + 3600_000,
 		region: "us",
-		tokenUrl: "https://login.cast.ai/oauth/token",
+		tokenUrl: "https://login.kimchi.dev/oauth/token",
 		clientId: "rG3I0gwpiMzjzv1qC2W5s21UMQlNzSlS",
 		useIdToken: true,
 		idToken: "sso-id-token",
