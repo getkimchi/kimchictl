@@ -11,7 +11,7 @@ import {
 	type WorkspaceTemplate,
 	type WorkspaceTemplateSpec,
 } from "../api/templates.js"
-import { requireApiKey } from "../auth/resolve.js"
+import { resolveCredential } from "../auth/resolve.js"
 import { parseFlags, UsageError } from "./flags.js"
 import { guardCommand } from "./guard.js"
 import { formatTable } from "./table.js"
@@ -109,8 +109,8 @@ Options:
 		)
 	}
 
-	const { key } = requireApiKey(deps.env)
-	const templates = await listWorkspaceTemplates(key, { fetch: deps.fetch })
+	const { bearer: key, organizationId } = await resolveCredential(deps.env)
+	const templates = await listWorkspaceTemplates(key, { fetch: deps.fetch, organizationId })
 
 	if (values.output === "json") {
 		console.log(JSON.stringify(templates.map(serializeTemplate), null, 2))
@@ -152,16 +152,16 @@ Options:
 		)
 	}
 
-	const { key } = requireApiKey(deps.env)
+	const { bearer: key, organizationId } = await resolveCredential(deps.env)
 	const ref = positionals[0] ?? ""
 
 	// Templates are addressed by ID in the API; when the ref is a name,
 	// list-and-match (the API has no by-name lookup).
 	let template: WorkspaceTemplate | undefined
 	if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) {
-		template = await getWorkspaceTemplate(key, ref, { fetch: deps.fetch })
+		template = await getWorkspaceTemplate(key, ref, { fetch: deps.fetch, organizationId })
 	} else {
-		const all = await listWorkspaceTemplates(key, { fetch: deps.fetch })
+		const all = await listWorkspaceTemplates(key, { fetch: deps.fetch, organizationId })
 		const matches = all.filter((t) => t.name === ref || t.name.startsWith(ref))
 		if (matches.length === 0) throw new TemplateNotFoundError(ref)
 		if (matches.length > 1)
@@ -305,8 +305,8 @@ async function runTemplatesCreate(args: string[], deps: TemplatesDeps): Promise<
 		)
 	}
 
-	const { key } = requireApiKey(deps.env)
-	const created = await createWorkspaceTemplate(key, input, { fetch: deps.fetch })
+	const { bearer: key, organizationId } = await resolveCredential(deps.env)
+	const created = await createWorkspaceTemplate(key, input, { fetch: deps.fetch, organizationId })
 	console.log(`✓ created template ${created.name}`)
 	return 0
 }

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process"
 import { resolveWorkspace } from "../api/resolver.js"
 import type { ApiOptions } from "../api/types.js"
 import { waitForWorkspaceActive } from "../api/wait.js"
-import { requireApiKey } from "../auth/resolve.js"
+import { resolveCredential } from "../auth/resolve.js"
 import {
 	isSshIntegrationConfigured,
 	isSshSetupDisabled,
@@ -67,18 +67,19 @@ export async function connectToWorkspace(
 	const env = options.env ?? process.env
 	await ensureSshIntegration({ env })
 
-	const { key } = requireApiKey(env)
+	const { bearer: key, organizationId } = await resolveCredential(env)
 
 	// Accepts "<alias>", "<alias>.<domain>", a UUID, or an alias prefix.
 	const ref = workspaceIdFromRef(name)
-	let workspace = await resolveWorkspace(key, ref, options)
+	let workspace = await resolveWorkspace(key, ref, { ...options, organizationId })
 	if (workspace.status === "suspended" || workspace.status === "initializing") {
 		if (workspace.status === "suspended") {
-			await resumeForConnect(key, workspace.id, options)
+			await resumeForConnect(key, workspace.id, { ...options, orgId: organizationId })
 		}
 		process.stderr.write("  resuming…")
 		workspace = await waitForWorkspaceActive(key, workspace.id, {
 			...options,
+			organizationId,
 			timeoutMs: RESUME_WAIT_TIMEOUT_MS,
 			sleep: options.sleep,
 			onTick: (elapsedSeconds) => process.stderr.write(`\r  resuming… ${elapsedSeconds}s`),

@@ -10,7 +10,7 @@ import {
 	listWorkspaces,
 	type Workspace,
 } from "../api/workspaces.js"
-import { requireApiKey } from "../auth/resolve.js"
+import { resolveCredential } from "../auth/resolve.js"
 import { resolveSshDomain } from "../ssh/config.js"
 import { parseFlags, UsageError } from "./flags.js"
 import { guardCommand } from "./guard.js"
@@ -209,10 +209,11 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 			}
 		: undefined
 
-	const { key } = requireApiKey(deps.env)
+	const { bearer: key, organizationId } = await resolveCredential(deps.env)
 	const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
 
 	const created = await createWorkspace(key, {
+		organizationId,
 		description: desc,
 		templateName,
 		templateId,
@@ -282,8 +283,8 @@ Options:
 		)
 	}
 
-	const { key } = requireApiKey(deps.env)
-	const workspaces = await listWorkspaces(key, { fetch: deps.fetch })
+	const { bearer: key, organizationId } = await resolveCredential(deps.env)
+	const workspaces = await listWorkspaces(key, { fetch: deps.fetch, organizationId })
 
 	if (values.output === "json") {
 		console.log(JSON.stringify(workspaces.map(serializeWorkspace), null, 2))
@@ -330,9 +331,9 @@ Options:
 		)
 	}
 
-	const { key } = requireApiKey(deps.env)
+	const { bearer: key, organizationId } = await resolveCredential(deps.env)
 	// Accepts a UUID, full alias, or alias prefix (see api/resolver.ts).
-	const workspace = await resolveWorkspace(key, positionals[0] ?? "", { fetch: deps.fetch })
+	const workspace = await resolveWorkspace(key, positionals[0] ?? "", { fetch: deps.fetch, organizationId })
 
 	if (values.output === "json") {
 		console.log(JSON.stringify(serializeWorkspace(workspace), null, 2))
@@ -365,10 +366,10 @@ Options:
 	}
 	const ref = positionals[0] ?? ""
 
-	const { key } = requireApiKey(deps.env)
+	const { bearer: key, organizationId } = await resolveCredential(deps.env)
 	// Resolve before prompting so the confirmation names the real target and
 	// typos fail fast instead of after the user answered the prompt.
-	const workspace = await resolveWorkspace(key, ref, { fetch: deps.fetch })
+	const workspace = await resolveWorkspace(key, ref, { fetch: deps.fetch, organizationId })
 
 	if (!values.force) {
 		const interactive = deps.interactive ?? isInteractive()
@@ -384,7 +385,7 @@ Options:
 		}
 	}
 
-	await deleteWorkspace(key, workspace.id, { fetch: deps.fetch })
+	await deleteWorkspace(key, workspace.id, { fetch: deps.fetch, organizationId })
 	console.log(`✓ deleted ${workspace.alias}`)
 	return 0
 }

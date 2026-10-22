@@ -45,11 +45,16 @@ export async function resolveTunnel(
 	options?: ResolveTunnelOptions,
 ): Promise<TunnelCreds> {
 	const ref = workspaceIdFromRef(wsRef)
-	const workspace = await resolveWorkspace(apiKey, ref, options)
+	// Org-scoped SSO credentials: the stored organization id routes the
+	// workspace lookup and the token exchange (skips the verifyKey round-trip).
+	const workspace = await resolveWorkspace(apiKey, ref, { ...options, organizationId: options?.organizationId })
 	if (!workspace.uri) {
 		throw new RemoteNetworkError(`Workspace ${ref} has no connection URI yet — it may still be provisioning`)
 	}
-	const { token } = await exchangeWorkspaceToken(apiKey, workspace.id, options)
+	const { token } = await exchangeWorkspaceToken(apiKey, workspace.id, {
+		...options,
+		organizationId: options?.organizationId,
+	})
 	return { wsUrl: buildWsUrl(workspace.uri, options?.port), token }
 }
 

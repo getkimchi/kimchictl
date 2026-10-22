@@ -22,7 +22,7 @@ export async function exchangeWorkspaceToken(
 		url,
 		{
 			method: "POST",
-			headers: authHeaders(apiKey, options?.orgId, { "Content-Type": "application/json" }),
+			headers: authHeaders(apiKey, options?.organizationId ?? options?.orgId, { "Content-Type": "application/json" }),
 			body: JSON.stringify({ workspaceId }),
 		},
 		fetchImpl,

@@ -1,5 +1,5 @@
 import { verifyApiKey } from "../api/keys.js"
-import { requireApiKey } from "../auth/resolve.js"
+import { resolveCredential } from "../auth/resolve.js"
 import { bridgeStdioToWebSocket } from "../ssh/bridge.js"
 import {
 	isSshIntegrationConfigured,
@@ -124,9 +124,9 @@ Options:
 	}
 
 	const env = deps.env ?? process.env
-	const { key } = requireApiKey(env)
+	const { bearer: key, organizationId } = await resolveCredential(env)
 	await verifyApiKey(key, { fetch: deps.fetch })
-	const creds = await resolveTunnel(key, host, { port, fetch: deps.fetch })
+	const creds = await resolveTunnel(key, host, { port, fetch: deps.fetch, organizationId })
 	try {
 		await bridgeStdioToWebSocket({ wsUrl: creds.wsUrl, token: creds.token })
 	} catch {

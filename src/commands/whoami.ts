@@ -1,5 +1,5 @@
 import { getMe } from "../api/me.js"
-import { requireApiKey } from "../auth/resolve.js"
+import { resolveCredential } from "../auth/resolve.js"
 import { parseFlags } from "./flags.js"
 
 export interface WhoamiDeps {
@@ -14,12 +14,12 @@ export async function runWhoami(args: string[], deps: WhoamiDeps = {}): Promise<
 	})
 	const env = deps.env ?? process.env
 
-	const { key, source } = requireApiKey(env)
+	const { bearer: key, source, organizationId } = await resolveCredential(env)
 	if (values.output !== "json" && values.output !== "text") {
 		console.error(`kimchictl whoami: unsupported --output "${values.output}" (expected text|json)`)
 		return 2
 	}
-	const me = await getMe(key, { fetch: deps.fetch })
+	const me = await getMe(key, { fetch: deps.fetch, organizationId })
 
 	if (values.output === "json") {
 		console.log(JSON.stringify(me))
