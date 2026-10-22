@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { isKimchiProvider } from "./provider-ids.js"
 
 /**
- * Merge (or strip) the `X-Organization-ID` header on every Kimchi-managed
+ * Merge (or strip) the `X-CastAi-Organization-Id` header on every Kimchi-managed
  * provider entry in models.json WITHOUT touching anything else — a port of
  * the harness's `applyOrganizationHeader`
  * (kimchi-dev:src/models.ts). models.json is the harness's file; kimchictl
@@ -11,7 +11,7 @@ import { isKimchiProvider } from "./provider-ids.js"
  * key-based requests to the wrong organization).
  */
 
-const ORGANIZATION_HEADER = "X-Organization-ID"
+const ORGANIZATION_HEADER = "X-CastAi-Organization-Id"
 
 export function applyOrganizationHeader(modelsJsonPath: string, organizationId: string | undefined): void {
 	if (!existsSync(modelsJsonPath)) return
