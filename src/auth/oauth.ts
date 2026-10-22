@@ -143,7 +143,10 @@ function requiredString(value: unknown, field: string): string {
 function clientConfiguration(config: KimchiOAuthConfig, fetchImpl?: typeof globalThis.fetch): Configuration {
 	const configuration = new Configuration(
 		{
-			issuer: new URL(config.tokenUrl).origin,
+			// Auth0 always issues ID tokens with a TRAILING SLASH on the issuer
+			// ("https://login.kimchi.dev/") — the strict `iss` comparison here
+			// fails on "unexpected JWT \"iss\" claim value" without it.
+			issuer: `${new URL(config.tokenUrl).origin}/`,
 			authorization_endpoint: config.authorizeUrl,
 			token_endpoint: config.tokenUrl,
 		},

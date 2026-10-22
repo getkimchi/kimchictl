@@ -133,7 +133,8 @@ async function startMockAuthServer(): Promise<MockAuthServer> {
 		const header = { alg: "RS256", typ: "JWT", kid: opts.kid }
 		const now = Math.floor(Date.now() / 1000)
 		const payload = {
-			iss: `http://127.0.0.1:${port}`,
+			// Auth0 convention: the issuer claim carries a trailing slash.
+			iss: `http://127.0.0.1:${port}/`,
 			aud: "mock-client-id",
 			sub: "auth0|mock-user",
 			iat: now,
