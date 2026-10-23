@@ -104,7 +104,7 @@ export async function resolveCredential(env: NodeJS.ProcessEnv = process.env): P
 			await syncSharedOAuth(authPath, credential, providerIds)
 		} catch (err) {
 			if (isInvalidGrantError(err)) {
-				throw new RefreshRequiredError()
+				throw new RefreshRequiredError(err instanceof Error ? err.message : undefined)
 			}
 			// Transient refresh failure (network/5xx): fall through with the
 			// stored token — the API call will retry or surface its own error.
@@ -119,10 +119,19 @@ export async function resolveCredential(env: NodeJS.ProcessEnv = process.env): P
 	}
 }
 
-/** The refresh token is dead; the user must sign in again. */
+/** The refresh token is dead; the user must sign in again. Carries the
+ * IdP's reason (e.g. Auth0's "Unknown or invalid refresh token") so
+ * policy problems (short token lifetime, rotation reuse) are visible in
+ * the terminal instead of a generic expiry message. */
 export class RefreshRequiredError extends Error {
-	constructor() {
-		super("Your CAST AI sign-in has expired. Run `kimchictl login` to sign in again.")
+	constructor(detail?: string) {
+		super(
+			`Your CAST AI sign-in's refresh token was rejected` +
+				(detail ? ` — ${detail}` : "") +
+				`. Run \`kimchictl login\` to sign in again.` +
+				` If this keeps happening, check the Auth0 application's refresh-token policy` +
+				` (rotation off, long idle/absolute lifetime).`,
+		)
 		this.name = "RefreshRequiredError"
 	}
 }
