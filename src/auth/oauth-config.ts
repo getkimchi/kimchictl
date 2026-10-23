@@ -64,6 +64,13 @@ const REGION_OAUTH_DEFAULTS: Record<SsoRegionId, RegionOAuthDefaults> = {
 	},
 }
 
+/** The registered Auth0 API identifier — REQUIRED for usable refresh
+ * tokens: without an `audience` param Auth0 issues session-bound tokens it
+ * immediately refuses on the refresh grant (verified live: seconds-old
+ * refresh tokens rejected as "Unknown or invalid"). Override only for
+ * dev/mock setups. */
+export const OAUTH_AUDIENCE = "https://app.kimchi.dev"
+
 function boolEnv(env: NodeJS.ProcessEnv, name: string): boolean | undefined {
 	const value = env[name]?.trim().toLowerCase()
 	if (value === undefined || value === "") return undefined
@@ -92,7 +99,7 @@ export function oauthConfigForRegion(region: SsoRegionId, env: NodeJS.ProcessEnv
 		authorizeUrl: nonEmptyEnv(env, "KIMCHI_OAUTH_AUTHORIZE_URL") ?? defaults.authorizeUrl,
 		tokenUrl: nonEmptyEnv(env, "KIMCHI_OAUTH_TOKEN_URL") ?? defaults.tokenUrl,
 		clientId,
-		audience: nonEmptyEnv(env, "KIMCHI_OAUTH_AUDIENCE"),
+		audience: nonEmptyEnv(env, "KIMCHI_OAUTH_AUDIENCE") ?? OAUTH_AUDIENCE,
 		// The org listing lives on the Cast AI users API (castApiUrl), not the
 		// Auth0 tenant — full-URL env override for dev/test (mock AS setups).
 		organizationsUrl: nonEmptyEnv(env, "KIMCHI_ORGANIZATIONS_URL") ?? `${defaults.castApiUrl}/v1/organizations`,
