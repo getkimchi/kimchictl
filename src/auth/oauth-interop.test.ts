@@ -238,13 +238,12 @@ describe("resolveCredential / resolveApiKey OAuth tier", () => {
 
 		mkdirSync(dirname(configPath), { recursive: true })
 		writeFileSync(configPath, JSON.stringify({ apiKey: "config-key" }))
-		expect(resolveApiKey(env)?.source).toBe("config")
+		// config.json keys are ignored: the stored oauth entry is still the
+		// credential of record, not the wizard key.
+		expect(resolveApiKey(env)).toEqual({ key: "mock-id-token-1", source: "auth-json-oauth" })
 
-		// An auth.json api_key entry ranks BELOW the config key...
+		// An auth.json api_key entry ranks above the oauth entry.
 		writeFileSync(authPath, JSON.stringify({ "kimchi-dev": { type: "api_key", key: "auth-key" } }))
-		expect(resolveApiKey(env)?.key).toBe("config-key")
-		// ...but above the oauth entry once the config key is gone.
-		writeFileSync(configPath, JSON.stringify({}))
 		expect(resolveApiKey(env)).toEqual({ key: "auth-key", source: "auth-json" })
 	})
 })

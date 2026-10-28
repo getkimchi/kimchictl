@@ -1,8 +1,15 @@
 import { createPublicKey, createSign, generateKeyPairSync, type KeyObject } from "node:crypto"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
-import { describe, expect, it } from "vitest"
-import { loginWithCastAiOauth, needsRefresh, refreshCredential, type SsoCredential } from "./oauth.js"
+import { describe, expect, it, vi } from "vitest"
+import {
+	type KimchiOrganization,
+	loginWithCastAiOauth,
+	needsRefresh,
+	refreshCredential,
+	type SsoCredential,
+	selectOrganization,
+} from "./oauth.js"
 import type { SsoRegionId } from "./oauth-config.js"
 
 /**
@@ -198,6 +205,36 @@ async function driveBrowser(authorizeUrl: string): Promise<void> {
 }
 
 // --- Tests -------------------------------------------------------------------
+
+describe("selectOrganization", () => {
+	const orgs: KimchiOrganization[] = [
+		{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Alpha" },
+		{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Beta" },
+	]
+	const ask = vi.fn(async () => "1")
+
+	it("skips the picker when --org-id matches an organization id (case-insensitive)", async () => {
+		const pick = await selectOrganization(orgs, ask, "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB")
+		expect(pick.id).toBe("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+		expect(ask).not.toHaveBeenCalled()
+	})
+
+	it("matches by organization name too", async () => {
+		const pick = await selectOrganization(orgs, ask, "Beta")
+		expect(pick.name).toBe("Beta")
+		expect(ask).not.toHaveBeenCalled()
+	})
+
+	it("rejects an org id the account cannot see", async () => {
+		await expect(selectOrganization(orgs, ask, "nope")).rejects.toThrow(/not available to this account/)
+		expect(ask).not.toHaveBeenCalled()
+	})
+
+	it("keeps the interactive picker without --org-id", async () => {
+		const pick = await selectOrganization(orgs, ask)
+		expect(pick.name).toBe("Alpha")
+	})
+})
 
 describe("loginWithCastAiOauth", () => {
 	it("completes the code exchange, prompts for the org, and returns the harness-shaped credential", async () => {

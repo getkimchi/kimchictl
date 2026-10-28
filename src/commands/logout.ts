@@ -1,5 +1,5 @@
 import { clearSharedAuth, readSavedApiKey } from "../auth/auth-file.js"
-import { readApiKeyFromConfig, writeApiKeyToConfig } from "../auth/config-file.js"
+import { writeApiKeyToConfig } from "../auth/config-file.js"
 import { resolveAuthJsonPath, resolveConfigJsonPath } from "../auth/paths.js"
 import { parseFlags } from "./flags.js"
 import { confirm, isInteractive } from "./prompt.js"
@@ -26,7 +26,7 @@ export async function runLogout(args: string[], deps: LogoutDeps = {}): Promise<
 	const authPath = resolveAuthJsonPath(env)
 	const configPath = resolveConfigJsonPath(env)
 
-	const hasCredential = readSavedApiKey(authPath) !== undefined || readApiKeyFromConfig(configPath) !== undefined
+	const hasCredential = readSavedApiKey(authPath) !== undefined
 	if (!hasCredential) {
 		console.log("Not logged in.")
 		return 0

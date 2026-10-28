@@ -20,13 +20,13 @@ describe("resolveApiKey precedence", () => {
 		expect(resolveApiKey()).toEqual({ key: "env-key", source: "environment" })
 	})
 
-	it("falls back to config.json, then auth.json", () => {
+	it("uses auth.json even when config.json has a key (config keys are ignored)", () => {
 		const dir = makeTempDir()
 		const { home } = stubAgentDirEnv(dir)
 		writeSharedConfigJson(home, { apiKey: "config-key" })
 		writeFileSync(join(dir, "auth.json"), JSON.stringify({ "kimchi-dev": { type: "api_key", key: "auth-key" } }))
 
-		expect(resolveApiKey()).toEqual({ key: "config-key", source: "config" })
+		expect(resolveApiKey()).toEqual({ key: "auth-key", source: "auth-json" })
 	})
 
 	it("uses auth.json when no config key exists", () => {
@@ -63,10 +63,10 @@ describe("default layout (no env overrides) — regression: the real harness pat
 		expect(resolveApiKey({ HOME: home })).toEqual({ key: "auth-key", source: "auth-json" })
 	})
 
-	it("resolves the apiKey from ~/.config/kimchi/config.json (sibling of the agent dir)", () => {
+	it("ignores the apiKey in ~/.config/kimchi/config.json (auth.json is the only store)", () => {
 		const home = makeTempDir()
 		writeSharedConfigJson(home, { apiKey: "config-key" })
 
-		expect(resolveApiKey({ HOME: home })).toEqual({ key: "config-key", source: "config" })
+		expect(resolveApiKey({ HOME: home })).toBeUndefined()
 	})
 })

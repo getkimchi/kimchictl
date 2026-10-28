@@ -244,6 +244,24 @@ describe("kimchictl login --sso", () => {
 		expect(errors[0]).toMatch(/mutually exclusive/)
 	})
 
+	it("forwards --org-id to the SSO flow (skips the org picker)", async () => {
+		const dir = makeTempDir()
+		stubAgentDirEnv(dir)
+		const loginSso = vi.fn().mockResolvedValue(ssoCredential)
+
+		const code = await runLogin(["--sso", "--org-id", "org-beta"], { loginSso })
+
+		expect(code).toBe(0)
+		expect(loginSso).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ orgId: "org-beta" }))
+	})
+
+	it("rejects --org-id with an API-key login", async () => {
+		stubAgentDirEnv(makeTempDir())
+		const { errors } = captureConsole()
+		expect(await runLogin(["--api-key", "k", "--org-id", "org-beta"])).toBe(2)
+		expect(errors[0]).toMatch(/org-id only applies/)
+	})
+
 	it("validates --region", async () => {
 		stubAgentDirEnv(makeTempDir())
 		const { errors } = captureConsole()

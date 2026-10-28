@@ -1,9 +1,8 @@
 import { readAuthJson, readSavedApiKey, readSharedOAuthCredential, syncSharedOAuth } from "./auth-file.js"
-import { readApiKeyFromConfig } from "./config-file.js"
 import { isInvalidGrantError, needsRefresh, refreshCredential, type SsoCredential } from "./oauth.js"
-import { resolveAuthJsonPath, resolveConfigJsonPath } from "./paths.js"
+import { resolveAuthJsonPath } from "./paths.js"
 
-export type ApiKeySource = "environment" | "config" | "auth-json" | "auth-json-oauth"
+export type ApiKeySource = "environment" | "auth-json" | "auth-json-oauth"
 
 export interface ResolvedApiKey {
 	key: string
@@ -11,12 +10,13 @@ export interface ResolvedApiKey {
 }
 
 /**
- * Credential resolution, mirroring the harness precedence
- * (kimchi-dev:src/config.ts — env key beats the saved login):
+ * Credential resolution. auth.json is the single credential store (the
+ * shared pi auth file the login writes); config.json's onboarding apiKey is
+ * deliberately NOT consulted, so a stale wizard key can never shadow a saved
+ * SSO org selection.
  *   1. KIMCHI_API_KEY environment variable
- *   2. config.json `apiKey` (the harness's saved key)
- *   3. auth.json `kimchi-dev` entry (api_key)
- *   4. auth.json `kimchi-dev` entry (oauth — CAST AI SSO)
+ *   2. auth.json `kimchi-dev` entry (api_key)
+ *   3. auth.json `kimchi-dev` entry (oauth — CAST AI SSO)
  *
  * The OAuth tier is served by `resolveCredential`, which also handles the
  * just-in-time refresh; `resolveApiKey` stays for callers that only need a
@@ -25,10 +25,6 @@ export interface ResolvedApiKey {
 export function resolveApiKey(env: NodeJS.ProcessEnv = process.env): ResolvedApiKey | undefined {
 	const envKey = env.KIMCHI_API_KEY?.trim()
 	if (envKey) return { key: envKey, source: "environment" }
-
-	const configPath = resolveConfigJsonPath(env)
-	const configKey = readApiKeyFromConfig(configPath)
-	if (configKey) return { key: configKey, source: "config" }
 
 	const authPath = resolveAuthJsonPath(env)
 	const authKey = readSavedApiKey(authPath)
@@ -80,10 +76,6 @@ export interface ResolvedCredential {
 export async function resolveCredential(env: NodeJS.ProcessEnv = process.env): Promise<ResolvedCredential> {
 	const envKey = env.KIMCHI_API_KEY?.trim()
 	if (envKey) return { bearer: envKey, source: "environment" }
-
-	const configPath = resolveConfigJsonPath(env)
-	const configKey = readApiKeyFromConfig(configPath)
-	if (configKey) return { bearer: configKey, source: "config" }
 
 	const authPath = resolveAuthJsonPath(env)
 	const authKey = readSavedApiKey(authPath)
