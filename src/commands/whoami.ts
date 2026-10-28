@@ -28,9 +28,7 @@ export async function runWhoami(args: string[], deps: WhoamiDeps = {}): Promise<
 		if (me.username) console.log(`username: ${me.username}`)
 		if (me.email) console.log(`email:    ${me.email}`)
 		// Key source goes to stderr so stdout stays machine-parseable.
-		console.error(
-			`(authenticated via ${source === "environment" ? "KIMCHI_API_KEY" : source === "config" ? "config.json" : "auth.json"})`,
-		)
+		console.error(`(authenticated via ${source === "environment" ? "KIMCHI_API_KEY" : "auth.json"})`)
 	}
 	return 0
 }

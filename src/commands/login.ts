@@ -39,8 +39,9 @@ const METHOD_SUMMARY: Record<LoginMethod, string> = {
  *      per-region CAST AI Auth0 tenant; stores a refreshable,
  *      organization-scoped `{ type: "oauth" }` credential fan-out in auth.json
  *      (the same shape the harness writes — either tool's SSO login works in
- *      the other). config.json's apiKey stays unset so the harness's startup
- *      sync never clobbers the OAuth entries.
+ *      the other). Pass `--org-id <id>` to skip the org picker. config.json's
+ *      apiKey stays unset so the harness's startup sync never clobbers the
+ *      OAuth entries.
  *   2. Browser login — the legacy web-app handoff, delivering a long-lived
  *      API key.
  *   3. --api-key — non-interactive key entry (CI path).
@@ -49,6 +50,7 @@ export async function runLogin(args: string[], deps: LoginDeps = {}): Promise<nu
 	const { values } = parseFlags("login", args, {
 		"api-key": { type: "string" },
 		sso: { type: "boolean" },
+		"org-id": { type: "string" },
 		region: { type: "string" },
 	})
 	const env = deps.env ?? process.env
@@ -69,6 +71,10 @@ export async function runLogin(args: string[], deps: LoginDeps = {}): Promise<nu
 		}
 		method = "sso"
 	} else if (apiKeyProvided) {
+		if (values["org-id"] !== undefined) {
+			console.error("kimchictl login: --org-id only applies to the CAST AI SSO login (--sso)")
+			return 2
+		}
 		method = "api-key"
 	} else {
 		const interactive = deps.interactive ?? isInteractive()
@@ -113,6 +119,7 @@ export async function runLogin(args: string[], deps: LoginDeps = {}): Promise<nu
 				open: deps.open,
 				ask: deps.ask,
 				fetch: deps.fetch,
+				orgId: typeof values["org-id"] === "string" ? values["org-id"] : undefined,
 				onUrl: (url) => console.log(`If the browser does not open, visit:\n${url}`),
 			})
 		} catch (err) {

@@ -250,9 +250,23 @@ export async function listUserOrganizations(
 export async function selectOrganization(
 	organizations: KimchiOrganization[],
 	ask: (question: string) => Promise<string>,
+	requested?: string,
 ): Promise<KimchiOrganization> {
 	if (organizations.length === 0) {
 		throw new Error("This CAST AI account has no organizations")
+	}
+	// An explicit --org-id skips the numbered picker; reject ids/names the
+	// token can't see rather than guessing.
+	if (requested) {
+		const wanted = organizations.find(
+			(org) => org.id.toLowerCase() === requested.toLowerCase() || org.name === requested,
+		)
+		if (wanted) return wanted
+		throw new Error(
+			`organization ${requested} is not available to this account; available: ${organizations
+				.map((org) => org.id)
+				.join(", ")}`,
+		)
 	}
 	if (organizations.length === 1) {
 		const only = organizations[0]
@@ -283,6 +297,8 @@ export interface SsoLoginOptions {
 	onUrl?: (url: string) => void
 	/** Injected org-prompt ask (tests); default is the numbered readline. */
 	ask?: (question: string) => Promise<string>
+	/** Pre-selected org id/name — skips the org picker (--org-id). */
+	orgId?: string
 	/** Injected fetch (tests). */
 	fetch?: typeof globalThis.fetch
 	/** Test seam: the production login binds the registered fixed port;
@@ -368,7 +384,7 @@ export async function loginWithCastAiOauth(
 			fetch: options.fetch,
 			signal,
 		})
-		const organization = await selectOrganization(organizations, options.ask ?? defaultAsk)
+		const organization = await selectOrganization(organizations, options.ask ?? defaultAsk, options.orgId)
 		return { ...credential, orgId: organization.id, orgName: organization.name }
 	} finally {
 		callbackServer.close()
