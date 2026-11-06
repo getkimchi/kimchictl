@@ -97,6 +97,6 @@ export async function resumeForConnect(
 	workspaceId: string,
 	options?: ApiOptions & { orgId?: string },
 ): Promise<void> {
-	const orgId = options?.orgId ?? (await verifyApiKey(apiKey, options))
+	const orgId = options?.orgId ?? (await verifyApiKey(apiKey, options)).organizationId
 	await resumeWorkspace(apiKey, workspaceId, { ...options, orgId })
 }

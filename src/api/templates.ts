@@ -44,7 +44,7 @@ export interface WorkspaceTemplateOptions extends ApiOptions {
 }
 
 async function resolveOrgId(apiKey: string, options?: WorkspaceTemplateOptions): Promise<string> {
-	return options?.orgId ?? options?.organizationId ?? (await verifyApiKey(apiKey, options))
+	return options?.orgId ?? options?.organizationId ?? (await verifyApiKey(apiKey, options)).organizationId
 }
 
 export class TemplateNotFoundError extends Error {

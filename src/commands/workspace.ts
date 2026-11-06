@@ -4,6 +4,7 @@ import { verifyApiKey } from "../api/keys.js"
 import { resolveWorkspace } from "../api/resolver.js"
 import { formatAge, formatBytes, formatMillicores } from "../api/resources.js"
 import { resumeWorkspace, suspendWorkspace } from "../api/tokens.js"
+import { RemoteNetworkError } from "../api/types.js"
 import { waitForWorkspaceActive } from "../api/wait.js"
 import {
 	type CreateWorkspaceSpec,
@@ -266,12 +267,16 @@ function parseTimeoutSeconds(raw: unknown, command: string): number {
 async function runList(args: string[], deps: WorkspaceDeps): Promise<number> {
 	const { values, positionals } = parseFlags("workspace list", args, {
 		output: { type: "string", short: "o", default: "table" },
+		all: { type: "boolean" },
 	})
 	if (values.help) {
 		console.log(`Usage:
   kimchictl workspace list [options]
 
+Lists your workspaces by default.
+
 Options:
+  --all               List all workspaces in the organization, including teammates'
   --output <format>   Output format: table | json (default: table)
   --help              Show this help`)
 		return 0
@@ -286,8 +291,24 @@ Options:
 		)
 	}
 
-	const { bearer: key, organizationId } = await resolveCredential(deps.env)
-	const workspaces = await listWorkspaces(key, { fetch: deps.fetch, organizationId })
+	const credential = await resolveCredential(deps.env)
+	let organizationId = credential.organizationId
+	let creatorId: string | undefined
+	// Own-workspaces-only is the default (kap `ws ls` parity): the creatorId
+	// filter is the only line of defense against listing teammates' workspaces,
+	// so when the control plane withholds the user id we fail rather than
+	// silently degrade to an unfiltered list.
+	if (!values.all) {
+		const verified = await verifyApiKey(credential.bearer, { fetch: deps.fetch })
+		organizationId = verified.organizationId
+		if (!verified.userId) {
+			throw new RemoteNetworkError(
+				`Missing userId in verify response — cannot list only your workspaces; re-run with --all for the full organization list`,
+			)
+		}
+		creatorId = verified.userId
+	}
+	const workspaces = await listWorkspaces(credential.bearer, { fetch: deps.fetch, organizationId, creatorId })
 
 	if (values.output === "json") {
 		console.log(JSON.stringify(workspaces.map(serializeWorkspace), null, 2))
@@ -465,7 +486,7 @@ Options:
 
 /** Suspend/resume URLs embed the org id — resolve it when the credential didn't carry one. */
 async function resolveOrgId(key: string, organizationId: string | undefined, deps: WorkspaceDeps): Promise<string> {
-	return organizationId ?? (await verifyApiKey(key, { fetch: deps.fetch }))
+	return organizationId ?? (await verifyApiKey(key, { fetch: deps.fetch })).organizationId
 }
 
 /**
