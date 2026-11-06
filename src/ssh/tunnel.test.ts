@@ -162,6 +162,7 @@ describe("resumeForConnect", () => {
 		const fetch = stubFetch(async (url) => {
 			if (url.endsWith("/workspace-tokens:verifyKey")) return jsonResponse({ organizationId: "org-1" })
 			if (url.endsWith(`/workspaces/${UUID}:resume`)) return new Response("workspace is not suspended", { status: 400 })
+			if (url.endsWith(`/workspaces/${UUID}`)) return jsonResponse(WS_JSON) // verification GET: ACTIVE
 			throw new Error(`unexpected request: ${url}`)
 		})
 

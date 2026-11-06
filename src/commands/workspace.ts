@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
+import { verifyApiKey } from "../api/keys.js"
 import { resolveWorkspace } from "../api/resolver.js"
 import { formatAge, formatBytes, formatMillicores } from "../api/resources.js"
+import { resumeWorkspace, suspendWorkspace } from "../api/tokens.js"
 import { waitForWorkspaceActive } from "../api/wait.js"
 import {
 	type CreateWorkspaceSpec,
@@ -26,8 +28,10 @@ export interface WorkspaceDeps {
 	confirm?: (question: string) => Promise<boolean>
 	/** Clock override for deterministic AGE columns (tests). */
 	now?: () => Date
-	/** Sleep override for the create wait loop (tests). */
+	/** Sleep override for the create/resume wait loop (tests). */
 	sleep?: (ms: number) => Promise<void>
+	/** stderr writer override for wait-progress ticks (tests); defaults to process.stderr. */
+	stderr?: (chunk: string) => void
 	/** ANSI colors on stdout (tests); defaults to stdout being a TTY. */
 	color?: boolean
 }
@@ -40,6 +44,8 @@ Verbs:
   list     List workspaces  (alias: ls)
   get      Show workspace details
   delete   Delete a workspace  (alias: rm)
+  suspend  Suspend (hibernate) a workspace
+  resume   Resume a suspended workspace (waits for ACTIVE)
 
 Create options:
   --desc <text>              Description
@@ -73,6 +79,10 @@ export async function runWorkspace(args: string[], deps: WorkspaceDeps = {}): Pr
 		case "delete":
 		case "rm":
 			return runDelete(rest, deps)
+		case "suspend":
+			return runSuspend(rest, deps)
+		case "resume":
+			return runResume(rest, deps)
 		case "help":
 		case "--help":
 		case "-h":
@@ -210,7 +220,6 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 		: undefined
 
 	const { bearer: key, organizationId } = await resolveCredential(deps.env)
-	const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
 
 	const created = await createWorkspace(key, {
 		organizationId,
@@ -228,13 +237,7 @@ async function runCreate(args: string[], deps: WorkspaceDeps): Promise<number> {
 	let current = created
 	if (!values["no-wait"]) {
 		// kap's create poll: 2s cadence, deadline, progress on stderr.
-		current = await waitForWorkspaceActive(key, created.id, {
-			fetch: deps.fetch,
-			timeoutMs: timeoutSeconds * 1000,
-			sleep,
-			onTick: (elapsedSeconds) => process.stderr.write(`\r  waiting… ${elapsedSeconds}s`),
-		})
-		process.stderr.write("\n")
+		current = await waitForActiveWithTicks(key, created.id, deps, timeoutSeconds * 1000)
 		if (current.status !== "active") {
 			console.error(`  ⚠ workspace still initializing — check with: kimchictl workspace get ${created.alias}`)
 		}
@@ -390,7 +393,108 @@ Options:
 	return 0
 }
 
+// ---------------------------------------------------------------- suspend
+
+async function runSuspend(args: string[], deps: WorkspaceDeps): Promise<number> {
+	const { values, positionals } = parseFlags("workspace suspend", args, {})
+	if (values.help) {
+		console.log(`Usage:
+  kimchictl workspace suspend <name>
+
+Suspends (hibernates) a running workspace. Reversible — see workspace resume.
+
+Options:
+  --help   Show this help`)
+		return 0
+	}
+	if (positionals.length !== 1) {
+		throw new UsageError("kimchictl workspace suspend: expected exactly one workspace name")
+	}
+
+	const { bearer: key, organizationId } = await resolveCredential(deps.env)
+	const workspace = await resolveWorkspace(key, positionals[0] ?? "", { fetch: deps.fetch, organizationId })
+	await suspendWorkspace(key, workspace.id, { fetch: deps.fetch, orgId: await resolveOrgId(key, organizationId, deps) })
+	console.log(`✓ suspending ${workspace.alias}`)
+	return 0
+}
+
+// ---------------------------------------------------------------- resume
+
+async function runResume(args: string[], deps: WorkspaceDeps): Promise<number> {
+	const { values, positionals } = parseFlags("workspace resume", args, {
+		"no-wait": { type: "boolean" },
+		timeout: { type: "string", default: "60" },
+	})
+	if (values.help) {
+		console.log(`Usage:
+  kimchictl workspace resume <name> [options]
+
+Options:
+  --no-wait           Skip waiting for ACTIVE
+  --timeout <seconds> Wait timeout (default 60)
+  --help              Show this help`)
+		return 0
+	}
+	if (positionals.length !== 1) {
+		throw new UsageError("kimchictl workspace resume: expected exactly one workspace name")
+	}
+	const timeoutSeconds = parseTimeoutSeconds(values.timeout, "workspace resume")
+
+	const { bearer: key, organizationId } = await resolveCredential(deps.env)
+	const workspace = await resolveWorkspace(key, positionals[0] ?? "", { fetch: deps.fetch, organizationId })
+	await resumeWorkspace(key, workspace.id, { fetch: deps.fetch, orgId: await resolveOrgId(key, organizationId, deps) })
+	console.log(`✓ resuming ${workspace.alias}`)
+
+	if (!values["no-wait"]) {
+		const current = await waitForActiveWithTicks(key, workspace.id, deps, timeoutSeconds * 1000)
+		if (current.status === "active") {
+			console.log(`✓ ${workspace.alias} is active`)
+		} else {
+			// create still exits 0 here (the workspace exists and its connect
+			// info prints anyway); resume's only product is an ACTIVE workspace,
+			// so a missed deadline fails the command — `resume && ssh` chains
+			// must not race a workspace that isn't ready.
+			console.error(`  ⚠ workspace is still ${current.status} — check with: kimchictl workspace get ${workspace.alias}`)
+			return 1
+		}
+	}
+	return 0
+}
+
 // ---------------------------------------------------------------- shared
+
+/** Suspend/resume URLs embed the org id — resolve it when the credential didn't carry one. */
+async function resolveOrgId(key: string, organizationId: string | undefined, deps: WorkspaceDeps): Promise<string> {
+	return organizationId ?? (await verifyApiKey(key, { fetch: deps.fetch }))
+}
+
+/**
+ * Wait for ACTIVE with progress ticks through the injectable stderr writer —
+ * the same poll as resume-via-ssh (2s cadence, deadline). The trailing
+ * newline only prints when a tick did, so a wait that ends before its first
+ * tick leaves stderr clean (no stray blank line).
+ */
+async function waitForActiveWithTicks(
+	key: string,
+	workspaceId: string,
+	deps: WorkspaceDeps,
+	timeoutMs: number,
+): Promise<Workspace> {
+	const write = deps.stderr ?? ((chunk: string) => process.stderr.write(chunk))
+	const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
+	let ticked = false
+	const current = await waitForWorkspaceActive(key, workspaceId, {
+		fetch: deps.fetch,
+		timeoutMs,
+		sleep,
+		onTick: (elapsedSeconds) => {
+			ticked = true
+			write(`\r  waiting… ${elapsedSeconds}s`)
+		},
+	})
+	if (ticked) write("\n")
+	return current
+}
 
 /** Tinted status dot: green=active, yellow=transitional/suspended, dim=terminated. */
 function statusDot(status: Workspace["status"], color: boolean): string {
