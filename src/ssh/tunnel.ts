@@ -3,11 +3,16 @@ import { resolveWorkspace } from "../api/resolver.js"
 import { exchangeWorkspaceToken, resumeWorkspace } from "../api/tokens.js"
 import type { ApiOptions } from "../api/types.js"
 import { RemoteNetworkError } from "../api/types.js"
+import { waitForWorkspaceActive } from "../api/wait.js"
 
 /**
  * Tunnel resolution for the SSH bridge (TS port of kap's
- * internal/ssh/bridge.go ResolveTunnel — refs resolve via api/resolver.ts).
+ * internal/ssh/bridge.go ResolveTunnel — refs resolve via api/resolver.ts,
+ * extended to wake suspended workspaces before dialing).
  */
+
+/** Post-resume wait budget for a suspended workspace to reach ACTIVE. */
+const RESUME_WAIT_TIMEOUT_MS = 90_000
 
 export interface TunnelCreds {
 	/** wss://<workspace-host>/ssh */
@@ -37,6 +42,8 @@ export function buildWsUrl(uri: string, port = 443): string {
 export interface ResolveTunnelOptions extends ApiOptions {
 	/** WebSocket port override (dev; default 443). */
 	port?: number
+	/** Poll sleep seam (tests) for the post-resume wait. */
+	sleep?: (ms: number) => Promise<void>
 }
 
 export async function resolveTunnel(
@@ -47,7 +54,33 @@ export async function resolveTunnel(
 	const ref = workspaceIdFromRef(wsRef)
 	// Org-scoped SSO credentials: the stored organization id routes the
 	// workspace lookup and the token exchange (skips the verifyKey round-trip).
-	const workspace = await resolveWorkspace(apiKey, ref, { ...options, organizationId: options?.organizationId })
+	let workspace = await resolveWorkspace(apiKey, ref, { ...options, organizationId: options?.organizationId })
+
+	// A suspended workspace has no live SSH endpoint: resume it and wait for
+	// ACTIVE *before* the token exchange, so the WS URL and JWT reflect the
+	// running instance. Details go to stderr — as a ProxyCommand, stdout is
+	// the SSH data channel and must stay clean.
+	if (workspace.status === "suspended") {
+		process.stderr.write(`[proxy] workspace ${workspace.alias} is suspended — resuming\n`)
+		await resumeForConnect(apiKey, workspace.id, { ...options, orgId: options?.organizationId })
+		workspace = await waitForWorkspaceActive(apiKey, workspace.id, {
+			...options,
+			organizationId: options?.organizationId,
+			timeoutMs: RESUME_WAIT_TIMEOUT_MS,
+			sleep: options?.sleep,
+			onTick: (elapsedSeconds) => process.stderr.write(`\r[proxy] resuming ${workspace.alias}… ${elapsedSeconds}s`),
+		})
+		process.stderr.write("\n")
+		if (workspace.status === "active") {
+			process.stderr.write(`[proxy] workspace ${workspace.alias} is active — connecting\n`)
+		} else {
+			process.stderr.write(
+				`[proxy] ⚠ workspace ${workspace.alias} is still ${workspace.status} after ` +
+					`${Math.round(RESUME_WAIT_TIMEOUT_MS / 1000)}s — connecting anyway\n`,
+			)
+		}
+	}
+
 	if (!workspace.uri) {
 		throw new RemoteNetworkError(`Workspace ${ref} has no connection URI yet — it may still be provisioning`)
 	}
