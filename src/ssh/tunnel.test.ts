@@ -4,6 +4,7 @@ import { buildWsUrl, resolveTunnel, resumeForConnect, workspaceIdFromRef } from 
 
 afterEach(() => {
 	vi.unstubAllEnvs()
+	vi.restoreAllMocks()
 })
 
 const UUID = "3d3dc322-dd05-4d0c-adab-beb2a0819e69"
@@ -73,6 +74,54 @@ describe("resolveTunnel", () => {
 		const creds = await resolveTunnel("key-1", UUID, { fetch })
 
 		expect(creds).toEqual({ wsUrl: "wss://ws-1.remote.kimchi.dev/ssh", token: "ws-jwt-1" })
+	})
+
+	it("resumes a suspended workspace and waits for ACTIVE before exchanging the token", async () => {
+		const calls: Call[] = []
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
+		const fetch = stubFetch(async (url, init) => {
+			calls.push({ url, init })
+			if (url.endsWith("/workspace-tokens:verifyKey")) return jsonResponse({ organizationId: "org-1" })
+			if (url.includes("?page.limit=")) return jsonResponse({ items: [{ ...WS_JSON, status: "SUSPENDED" }] })
+			if (url.endsWith(`/workspaces/${UUID}:resume`)) return jsonResponse({})
+			if (url.endsWith(`/workspaces/${UUID}`)) return jsonResponse(WS_JSON) // post-resume poll: ACTIVE
+			if (url.endsWith("/workspace-tokens:exchange")) {
+				return jsonResponse({ token: "ws-jwt-1", expireTime: "2026-01-01T01:00:00Z" })
+			}
+			throw new Error(`unexpected request: ${url}`)
+		})
+
+		const creds = await resolveTunnel("key-1", "ws-1.remote.kimchi.dev", { fetch, sleep: async () => {} })
+
+		expect(creds).toEqual({ wsUrl: "wss://ws-1.remote.kimchi.dev/ssh", token: "ws-jwt-1" })
+		// Resume went out before the token exchange.
+		const resumeAt = calls.findIndex((c) => c.url.endsWith(":resume"))
+		const exchangeAt = calls.findIndex((c) => c.url.endsWith(":exchange"))
+		expect(resumeAt).toBeGreaterThanOrEqual(0)
+		expect(exchangeAt).toBeGreaterThan(resumeAt)
+		// Details were logged to stderr.
+		const logged = stderr.mock.calls.map((c) => String(c[0])).join("")
+		expect(logged).toContain("suspended")
+		expect(logged).toContain("active")
+	})
+
+	it("does not resume when the workspace is already ACTIVE", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
+		const calls: Call[] = []
+		const fetch = stubFetch(async (url, init) => {
+			calls.push({ url, init })
+			if (url.endsWith("/workspace-tokens:verifyKey")) return jsonResponse({ organizationId: "org-1" })
+			if (url.includes("?page.limit=")) return jsonResponse({ items: [WS_JSON] })
+			if (url.endsWith("/workspace-tokens:exchange")) {
+				return jsonResponse({ token: "ws-jwt-1", expireTime: "2026-01-01T01:00:00Z" })
+			}
+			throw new Error(`unexpected request: ${url}`)
+		})
+
+		await resolveTunnel("key-1", "ws-1.remote.kimchi.dev", { fetch })
+
+		expect(calls.some((c) => c.url.endsWith(":resume"))).toBe(false)
+		expect(stderr).not.toHaveBeenCalled()
 	})
 
 	it("surfaces when the workspace has no URI yet", async () => {
