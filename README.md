@@ -66,6 +66,8 @@ kimchictl workspace create [--desc "..."] [--no-wait]
 kimchictl workspace list [--output table|json]      (alias: ws)
 kimchictl workspace get <name>
 kimchictl workspace delete <name> [--force]
+kimchictl workspace suspend <name>                  Hibernate a workspace
+kimchictl workspace resume <name> [--no-wait] [--timeout <seconds>]  Wake a suspended workspace (waits for ACTIVE)
 
 kimchictl ssh <name> [command...]     Connect (resumes hibernated workspaces)
 kimchictl ssh setup [--uninstall]     Manage the native SSH integration
@@ -75,9 +77,9 @@ kimchictl completion <bash|zsh|fish>  Print shell completions
 kimchictl version                     Print the version
 ```
 
-Suspend/resume exposed by the API today: **none**. `workspace suspend` / `workspace resume` land when the endpoints exist.
-
 `workspace create` prints progress, the connect commands, and finally the alias as the last stdout line — capture it with `kimchictl workspace create | tail -1`.
+
+`workspace resume` waits for ACTIVE (bounded by `--timeout <seconds>`, default 60) and exits non-zero when the workspace isn't active by the deadline, so `kimchictl workspace resume <name> && kimchictl ssh <name>` won't proceed against a workspace that isn't ready.
 
 ## Sharing auth with the kimchi agent
 

@@ -6,7 +6,19 @@ import { parseFlags, UsageError } from "./flags.js"
  */
 
 const TOP_LEVEL = ["login", "logout", "whoami", "workspace", "ws", "ssh", "update", "completion", "version", "help"]
-const WORKSPACE_VERBS = ["create", "list", "get", "delete", "--output", "--desc", "--force", "--no-wait", "--help"]
+const WORKSPACE_VERBS = [
+	"create",
+	"list",
+	"get",
+	"delete",
+	"suspend",
+	"resume",
+	"--output",
+	"--desc",
+	"--force",
+	"--no-wait",
+	"--help",
+]
 
 const BASH = `# kimchictl bash completion — source this file or place it in /etc/bash_completion.d/
 _kimchictl() {

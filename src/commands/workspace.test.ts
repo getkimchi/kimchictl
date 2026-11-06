@@ -129,7 +129,12 @@ describe("kimchictl workspace create", () => {
 			},
 		])
 
-		const { code, lines, errors } = await run(["create", "--desc", "api work"], fetch, { sleep: async () => {} })
+		const writes: string[] = []
+		const stderr = (chunk: string) => writes.push(chunk)
+		const { code, lines, errors } = await run(["create", "--desc", "api work"], fetch, {
+			sleep: async () => {},
+			stderr,
+		})
 
 		expect(code).toBe(0)
 		expect(lines).toEqual([
@@ -142,6 +147,9 @@ describe("kimchictl workspace create", () => {
 			"bright-oak-otter",
 		])
 		expect(errors).toEqual([])
+		// Two wait ticks (INITIALIZING → ACTIVE) then the newline — captured
+		// through the injected stderr writer.
+		expect(writes.join("")).toMatch(/^\r {2}waiting… \d+s\r {2}waiting… \d+s\n$/)
 	})
 
 	it("--no-wait returns immediately after create", async () => {
@@ -421,6 +429,322 @@ describe("kimchictl workspace get", () => {
 	it("requires exactly one name", async () => {
 		expect((await run(["get"], apiFetch([]))).code).toBe(2)
 		expect((await run(["get", "a", "b"], apiFetch([]))).code).toBe(2)
+	})
+
+	it("exports the guarded run() entry for the harness package-command contract", async () => {
+		// Same function contract, exit codes included: a usage error maps to 2,
+		// not a thrown exception — the harness dispatcher returns it verbatim.
+		expect(await workspaceRun(["frobnicate"], { color: false })).toBe(2)
+	})
+})
+
+// ---------------------------------------------------------------- suspend
+
+describe("kimchictl workspace suspend", () => {
+	it("POSTs :suspend for the resolved workspace and reports on stdout", async () => {
+		const calls: string[] = []
+		const routes: Route[] = [
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
+			{
+				method: "POST",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555:suspend$/,
+				respond: () => {
+					calls.push("suspend")
+					return jsonResponse({})
+				},
+			},
+		]
+		const fetch = apiFetch(routes)
+
+		const { code, lines } = await run(["suspend", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(0)
+		expect(calls).toEqual(["suspend"])
+		expect(lines).toEqual(["✓ suspending bright-oak-otter"])
+	})
+
+	it("tolerates 'not active' 400s (already suspended)", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\?page\.limit=/,
+				respond: () => jsonResponse({ items: [wsJson({ status: "SUSPENDED" })] }),
+			},
+			{
+				method: "POST",
+				match: /:suspend$/,
+				respond: () => new Response("workspace is not active", { status: 400 }),
+			},
+			{
+				method: "GET",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
+				respond: () => jsonResponse(wsJson({ status: "SUSPENDED" })), // verification GET: not running
+			},
+		])
+
+		const { code } = await run(["suspend", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(0)
+	})
+
+	it("tolerates a 400 regardless of wording when the workspace is not running", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\?page\.limit=/,
+				respond: () => jsonResponse({ items: [wsJson({ status: "SUSPENDED" })] }),
+			},
+			{
+				method: "POST",
+				match: /:suspend$/,
+				// Wording a prose matcher would never key on — the GET decides.
+				respond: () => new Response("precondition not met in current state", { status: 400 }),
+			},
+			{
+				method: "GET",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
+				respond: () => jsonResponse(wsJson({ status: "SUSPENDED" })),
+			},
+		])
+
+		const { code, lines } = await run(["suspend", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(0)
+		expect(lines).toEqual(["✓ suspending bright-oak-otter"])
+	})
+
+	it("fails on an unrelated 400 whose body merely contains 'not active'", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\?page\.limit=/,
+				respond: () => jsonResponse({ items: [wsJson()] }),
+			},
+			{
+				method: "POST",
+				match: /:suspend$/,
+				respond: () => new Response("billing account is not active", { status: 400 }),
+			},
+			{
+				method: "GET",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
+				respond: () => jsonResponse(wsJson()), // verification GET: still ACTIVE — the suspend did not take
+			},
+		])
+
+		const { code, lines, errors } = await run(["suspend", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(1)
+		expect(lines).toEqual([]) // no ✓ — silently "succeeding" here is the bug
+		expect(errors.join("")).toContain("HTTP 400")
+	})
+
+	it("propagates a 500 as an error with exit 1", async () => {
+		const fetch = apiFetch([
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
+			{ method: "POST", match: /:suspend$/, respond: () => new Response("internal error", { status: 500 }) },
+		])
+
+		const { code, lines, errors } = await run(["suspend", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(1)
+		expect(lines).toEqual([]) // the ✓ line only prints after a successful POST
+		expect(errors.join("")).toContain("HTTP 500")
+	})
+
+	it("resolves the org via verifyKey when the credential carries none", async () => {
+		const requests: string[] = []
+		const inner = apiFetch([
+			{ method: "GET", match: /\?page\.limit=/, respond: () => jsonResponse({ items: [wsJson()] }) },
+			{ method: "POST", match: /:suspend$/, respond: () => jsonResponse({}) },
+		])
+		const fetch = stubFetch(async (url, init) => {
+			requests.push(`${init?.method ?? "GET"} ${url}`)
+			return inner(url, init)
+		})
+
+		const { code } = await run(["suspend", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(0)
+		// api_key credentials carry no organizationId, so the org segment of the
+		// :suspend URL can only come from the verifyKey round-trip.
+		const verify = requests.findIndex((r) => r.endsWith("workspace-tokens:verifyKey"))
+		const suspend = requests.findIndex((r) => r.endsWith(":suspend"))
+		expect(verify).toBeGreaterThanOrEqual(0)
+		expect(suspend).toBeGreaterThan(verify)
+		expect(requests[suspend]).toContain(
+			"/ai-optimizer/v1beta/organizations/org-1/workspaces/11111111-2222-3333-4444-555555555555:suspend",
+		)
+	})
+
+	it("requires exactly one name", async () => {
+		expect((await run(["suspend"], apiFetch([]))).code).toBe(2)
+		expect((await run(["suspend", "a", "b"], apiFetch([]))).code).toBe(2)
+	})
+})
+
+// ---------------------------------------------------------------- resume
+
+describe("kimchictl workspace resume", () => {
+	it("POSTs :resume, waits for ACTIVE, and confirms", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\?page\.limit=/,
+				respond: () => jsonResponse({ items: [wsJson({ status: "SUSPENDED" })] }),
+			},
+			{ method: "POST", match: /:resume$/, respond: () => jsonResponse({}) },
+			{
+				method: "GET",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
+				respond: () => jsonResponse(wsJson()), // first poll: ACTIVE
+			},
+		])
+
+		const writes: string[] = []
+		const stderr = (chunk: string) => writes.push(chunk)
+		const { code, lines } = await run(["resume", "bright-oak-otter"], fetch, { sleep: async () => {}, stderr })
+
+		expect(code).toBe(0)
+		// "is active" only prints after the wait loop polls ACTIVE — proving the
+		// wait ran; the injected stderr writer captures the tick and newline.
+		expect(lines).toEqual(["✓ resuming bright-oak-otter", "✓ bright-oak-otter is active"])
+		expect(writes.join("")).toMatch(/^\r {2}waiting… \d+s\n$/)
+	})
+
+	it("--no-wait skips the ACTIVE poll", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\?page\.limit=/,
+				respond: () => jsonResponse({ items: [wsJson({ status: "SUSPENDED" })] }),
+			},
+			{ method: "POST", match: /:resume$/, respond: () => jsonResponse({}) },
+		])
+
+		const { code, lines } = await run(["resume", "--no-wait", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(0)
+		expect(lines).toEqual(["✓ resuming bright-oak-otter"])
+	})
+
+	it("tolerates a 400 regardless of wording when the workspace is already running", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\?page\.limit=/,
+				respond: () => jsonResponse({ items: [wsJson()] }),
+			},
+			{
+				method: "POST",
+				match: /:resume$/,
+				// Wording a prose matcher would never key on — the GET decides.
+				respond: () => new Response("workspace is already running", { status: 400 }),
+			},
+			{
+				method: "GET",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
+				respond: () => jsonResponse(wsJson()), // verification GET: ACTIVE
+			},
+		])
+
+		const { code, lines } = await run(["resume", "--no-wait", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(0)
+		expect(lines).toEqual(["✓ resuming bright-oak-otter"])
+	})
+
+	it("fails when a 'not suspended' 400 leaves the workspace suspended", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\?page\.limit=/,
+				respond: () => jsonResponse({ items: [wsJson({ status: "SUSPENDED" })] }),
+			},
+			{
+				method: "POST",
+				match: /:resume$/,
+				// The canonical FailedPrecondition prose — but the state check
+				// decides, and the workspace never left SUSPENDED.
+				respond: () => new Response("workspace is not suspended", { status: 400 }),
+			},
+			{
+				method: "GET",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
+				respond: () => jsonResponse(wsJson({ status: "SUSPENDED" })),
+			},
+		])
+
+		const { code, lines, errors } = await run(["resume", "--no-wait", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(1)
+		expect(lines).toEqual([])
+		expect(errors.join("")).toContain("HTTP 400")
+	})
+
+	it("propagates an unrelated 403 as an error with exit 1", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\?page\.limit=/,
+				respond: () => jsonResponse({ items: [wsJson({ status: "SUSPENDED" })] }),
+			},
+			{
+				method: "POST",
+				// The org-scoped path is pinned: a wrong org segment must not
+				// silently match (the stub throws "unexpected request" instead).
+				match: /\/organizations\/org-1\/workspaces\/11111111-2222-3333-4444-555555555555:resume$/,
+				respond: () => new Response("denied", { status: 403 }),
+			},
+		])
+
+		const { code, lines, errors } = await run(["resume", "bright-oak-otter"], fetch)
+
+		expect(code).toBe(1)
+		expect(lines).toEqual([]) // no ✓ line, and the ACTIVE poll never starts
+		expect(errors.join("")).toContain("Forbidden")
+	})
+
+	it("fails with exit 1 (and warns) when the wait budget expires", async () => {
+		const fetch = apiFetch([
+			{
+				method: "GET",
+				match: /\?page\.limit=/,
+				respond: () => jsonResponse({ items: [wsJson({ status: "SUSPENDED" })] }),
+			},
+			{ method: "POST", match: /:resume$/, respond: () => jsonResponse({}) },
+			{
+				method: "GET",
+				match: /\/workspaces\/11111111-2222-3333-4444-555555555555$/,
+				respond: () => jsonResponse(wsJson({ status: "INITIALIZING" })), // never ACTIVE
+			},
+		])
+
+		// Fake the clock: each injected sleep jumps it forward, so the 1s
+		// deadline really passes after the first 2s poll — no real waiting.
+		vi.useFakeTimers()
+		try {
+			const sleep = async (ms: number) => {
+				vi.setSystemTime(Date.now() + ms)
+			}
+			const writes: string[] = []
+			const { code, lines, errors } = await run(["resume", "--timeout", "1", "bright-oak-otter"], fetch, {
+				sleep,
+				stderr: (chunk) => writes.push(chunk),
+			})
+
+			expect(code).toBe(1)
+			expect(lines).toEqual(["✓ resuming bright-oak-otter"])
+			expect(errors.join("")).toContain("still initializing")
+			expect(writes.join("")).toMatch(/^\r {2}waiting… \d+s\n$/)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	it("requires exactly one name", async () => {
+		expect((await run(["resume"], apiFetch([]))).code).toBe(2)
+		expect((await run(["resume", "a", "b"], apiFetch([]))).code).toBe(2)
 	})
 
 	it("exports the guarded run() entry for the harness package-command contract", async () => {
