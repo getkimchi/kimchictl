@@ -54,14 +54,16 @@ interface Route {
 
 /**
  * Fetch stub routing on method+path. verifyKey is always answered with the
- * fixed org — the commands start every flow by resolving the org id.
+ * fixed org — the commands start every flow by resolving the org id. The
+ * userId keeps the default own-workspaces list filter working; tests that
+ * exercise the missing-userId path stub verifyKey themselves.
  */
 function apiFetch(routes: Route[]): typeof globalThis.fetch {
 	const counts = new Map<Route, number>()
 	return stubFetch(async (url, init) => {
 		const method = init?.method ?? "GET"
 		if (method === "POST" && url.endsWith("workspace-tokens:verifyKey")) {
-			return jsonResponse({ organizationId: "org-1" })
+			return jsonResponse({ organizationId: "org-1", userId: "user-7" })
 		}
 		for (const route of routes) {
 			if (route.method === method && route.match.test(url)) {
@@ -355,6 +357,71 @@ describe("kimchictl workspace list", () => {
 	it("rejects an unsupported output flavor", async () => {
 		const { code } = await run(["list", "--output", "yaml"], apiFetch([]))
 		expect(code).toBe(2)
+	})
+
+	it("filters to the current user by default (creatorId from verifyKey)", async () => {
+		// Only matches when the request carries the creatorId filter — otherwise
+		// the request hits no route and the test fails with "unexpected request".
+		const fetch = apiFetch([
+			{ method: "GET", match: /\?page\.limit=.*creatorId=user-7/, respond: () => jsonResponse({ items: [wsJson()] }) },
+		])
+
+		const { code } = await run(["list"], fetch)
+
+		expect(code).toBe(0)
+	})
+
+	it("--all lists the organization without the creatorId filter", async () => {
+		const urls: string[] = []
+		const fetch = stubFetch(async (url, init) => {
+			const method = init?.method ?? "GET"
+			urls.push(url)
+			if (method === "POST" && url.endsWith("workspace-tokens:verifyKey")) {
+				return jsonResponse({ organizationId: "org-1", userId: "user-7" })
+			}
+			if (method === "GET" && url.includes("?page.limit=")) {
+				return jsonResponse({ items: [wsJson()] })
+			}
+			throw new Error(`unexpected request: ${method} ${url}`)
+		})
+
+		const { code } = await run(["list", "--all"], fetch)
+
+		expect(code).toBe(0)
+		const listUrl = urls.find((u) => u.includes("?page.limit=")) ?? ""
+		expect(listUrl).not.toContain("creatorId=")
+	})
+
+	it("fails on the creator filter when the control plane omits userId (hint: --all)", async () => {
+		const fetch = stubFetch(async (url, init) => {
+			const method = init?.method ?? "GET"
+			if (method === "POST" && url.endsWith("workspace-tokens:verifyKey")) {
+				return jsonResponse({ organizationId: "org-1" }) // no userId
+			}
+			throw new Error(`unexpected request: ${method} ${url}`)
+		})
+
+		const { code, errors } = await run(["list"], fetch)
+
+		expect(code).toBe(1)
+		expect(errors.join("")).toContain("--all")
+	})
+
+	it("--all works when the control plane omits userId", async () => {
+		const fetch = stubFetch(async (url, init) => {
+			const method = init?.method ?? "GET"
+			if (method === "POST" && url.endsWith("workspace-tokens:verifyKey")) {
+				return jsonResponse({ organizationId: "org-1" })
+			}
+			if (method === "GET" && url.includes("?page.limit=")) {
+				return jsonResponse({ items: [wsJson()] })
+			}
+			throw new Error(`unexpected request: ${method} ${url}`)
+		})
+
+		const { code } = await run(["list", "--all"], fetch)
+
+		expect(code).toBe(0)
 	})
 })
 

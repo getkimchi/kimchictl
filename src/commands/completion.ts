@@ -13,6 +13,7 @@ const WORKSPACE_VERBS = [
 	"delete",
 	"suspend",
 	"resume",
+	"--all",
 	"--output",
 	"--desc",
 	"--force",

@@ -45,10 +45,19 @@ export interface WorkspaceCommandOptions extends ApiOptions {
 }
 
 async function resolveOrgId(apiKey: string, options?: WorkspaceCommandOptions): Promise<string> {
-	return options?.orgId ?? options?.organizationId ?? (await verifyApiKey(apiKey, options))
+	return options?.orgId ?? options?.organizationId ?? (await verifyApiKey(apiKey, options)).organizationId
 }
 
-export async function listWorkspaces(apiKey: string, options?: WorkspaceCommandOptions): Promise<Workspace[]> {
+export interface ListWorkspacesOptions extends WorkspaceCommandOptions {
+	/**
+	 * Server-side filter: only workspaces created by this user id (the
+	 * verifyKey `userId`). Empty/undefined lists every workspace the
+	 * credential can see.
+	 */
+	creatorId?: string
+}
+
+export async function listWorkspaces(apiKey: string, options?: ListWorkspacesOptions): Promise<Workspace[]> {
 	const fetchImpl = options?.fetch ?? globalThis.fetch
 	const endpoint = resolveEndpoint(options)
 
@@ -61,6 +70,7 @@ export async function listWorkspaces(apiKey: string, options?: WorkspaceCommandO
 		for (let page = 0; page < LIST_WORKSPACES_PAGE_HARD_CAP; page++) {
 			const params = new URLSearchParams()
 			params.set("page.limit", String(LIST_WORKSPACES_PAGE_LIMIT))
+			if (options?.creatorId) params.set("creatorId", options.creatorId)
 			if (cursor) params.set("page.cursor", cursor)
 
 			const url = `${endpoint}/ai-optimizer/v1beta/organizations/${encodeURIComponent(orgId)}/workspaces?${params.toString()}`

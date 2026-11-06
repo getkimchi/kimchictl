@@ -63,7 +63,7 @@ kimchictl logout [--all]              Remove kimchictl credentials (keeps kimchi
 kimchictl whoami                      Show the logged-in account and auth source
 
 kimchictl workspace create [--desc "..."] [--no-wait]
-kimchictl workspace list [--output table|json]      (alias: ws)
+kimchictl workspace list [--all] [--output table|json]      (alias: ws)   Lists your workspaces; --all adds teammates'
 kimchictl workspace get <name>
 kimchictl workspace delete <name> [--force]
 kimchictl workspace suspend <name>                  Hibernate a workspace
