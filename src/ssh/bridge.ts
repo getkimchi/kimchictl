@@ -131,15 +131,26 @@ export async function bridgeStdioToWebSocket(options: BridgeOptions): Promise<vo
 		})
 
 		// WS → stdout
+		let drainPending = false
 		ws.on("message", (data: RawData, isBinary: boolean) => {
 			// The workspace bridge is binary-only; text frames would be a server bug,
 			// but writing them through is still friendlier than dropping bytes.
 			void isBinary
 			const buffer = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data)
-			if (!output.write(buffer)) {
-				// Keep memory bounded if the consumer stalls: pause the socket until drained.
+			if (!output.write(buffer) && !drainPending) {
+				// Keep memory bounded if the consumer stalls: pause the socket until
+				// drained. Register ONE drain waiter per stall: ws.pause() only
+				// stops future reads, so messages the parser already queued keep
+				// reaching this handler while the stream is still backed up — one
+				// unguarded once("drain") each, and 11+ of them trip Node's
+				// MaxListenersExceededWarning (seen on disconnect, when the SSH
+				// client exits and the ProxyCommand's stdout pipe stops draining).
+				drainPending = true
 				ws.pause()
-				output.once("drain", () => ws.resume())
+				output.once("drain", () => {
+					drainPending = false
+					ws.resume()
+				})
 			}
 		})
 		ws.on("close", (code: number, reason: Buffer) => {
