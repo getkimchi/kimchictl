@@ -89,6 +89,18 @@ async function run(
 	return { code, lines, errors }
 }
 
+function oauthEntry(orgId?: string): Record<string, unknown> {
+	return {
+		type: "oauth",
+		access: "sso-token",
+		refresh: "refresh-token",
+		expires: Date.now() + 3_600_000,
+		tokenUrl: "https://identity.example.test/token",
+		clientId: "client-id",
+		...(orgId === undefined ? {} : { orgId }),
+	}
+}
+
 // ---------------------------------------------------------------- group dispatch
 
 describe("kimchictl workspace (group dispatch)", () => {
@@ -372,7 +384,28 @@ describe("kimchictl workspace list", () => {
 		expect(code).toBe(0)
 	})
 
-	it("preserves the selected SSO org when verifyKey reports a different org", async () => {
+	it.each([
+		{
+			name: "preserves the selected SSO org when verifyKey reports a different org",
+			authEntry: oauthEntry("org-selected"),
+			expectedOrganizationId: "org-selected",
+		},
+		{
+			name: "falls back to verifyKey org when the stored SSO org is missing",
+			authEntry: oauthEntry(),
+			expectedOrganizationId: "org-other",
+		},
+		{
+			name: "falls back to verifyKey org when the stored SSO org is empty",
+			authEntry: oauthEntry(""),
+			expectedOrganizationId: "org-other",
+		},
+		{
+			name: "uses verifyKey org for API keys even with org fields in the stored entry",
+			authEntry: { type: "api_key", key: "key", orgId: "org-stale", organizationId: "org-stale" },
+			expectedOrganizationId: "org-other",
+		},
+	])("$name", async ({ authEntry, expectedOrganizationId }) => {
 		const requests: Array<{ url: string; organizationId: string | null }> = []
 		const fetch = stubFetch(async (url, init) => {
 			const method = init?.method ?? "GET"
@@ -386,28 +419,15 @@ describe("kimchictl workspace list", () => {
 			throw new Error(`unexpected request: ${method} ${url}`)
 		})
 
-		const { code, lines } = await run(
-			["list"],
-			fetch,
-			{},
-			{
-				type: "oauth",
-				access: "sso-token",
-				refresh: "refresh-token",
-				expires: Date.now() + 3_600_000,
-				tokenUrl: "https://identity.example.test/token",
-				clientId: "client-id",
-				orgId: "org-selected",
-			},
-		)
+		const { code, lines } = await run(["list"], fetch, {}, authEntry)
 
 		expect(code).toBe(0)
 		expect(lines.join("")).toContain("bright-oak-otter")
 		expect(requests).toHaveLength(1)
 		const listUrl = requests[0]?.url ?? ""
-		expect(new URL(listUrl).pathname).toContain("/organizations/org-selected/workspaces")
+		expect(new URL(listUrl).pathname).toContain(`/organizations/${expectedOrganizationId}/workspaces`)
 		expect(new URL(listUrl).searchParams.get("creatorId")).toBe("user-7")
-		expect(requests[0]?.organizationId).toBe("org-selected")
+		expect(requests[0]?.organizationId).toBe(expectedOrganizationId)
 	})
 
 	it("--all lists the organization without the creatorId filter", async () => {
