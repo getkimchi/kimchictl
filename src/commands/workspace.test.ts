@@ -79,10 +79,11 @@ async function run(
 	args: string[],
 	fetch: typeof globalThis.fetch,
 	deps: WorkspaceDeps = {},
+	authEntry: Record<string, unknown> = { type: "api_key", key: "key" },
 ): Promise<{ code: number; lines: string[]; errors: string[] }> {
 	const dir = makeTempDir()
 	stubAgentDirEnv(dir)
-	writeFileSync(join(dir, "auth.json"), JSON.stringify({ "kimchi-dev": { type: "api_key", key: "key" } }))
+	writeFileSync(join(dir, "auth.json"), JSON.stringify({ "kimchi-dev": authEntry }))
 	const { lines, errors } = captureConsole()
 	const code = await guardedWorkspace(args, { color: false, fetch, ...deps })
 	return { code, lines, errors }
@@ -369,6 +370,44 @@ describe("kimchictl workspace list", () => {
 		const { code } = await run(["list"], fetch)
 
 		expect(code).toBe(0)
+	})
+
+	it("preserves the selected SSO org when verifyKey reports a different org", async () => {
+		const requests: Array<{ url: string; organizationId: string | null }> = []
+		const fetch = stubFetch(async (url, init) => {
+			const method = init?.method ?? "GET"
+			if (method === "POST" && url.endsWith("workspace-tokens:verifyKey")) {
+				return jsonResponse({ organizationId: "org-other", userId: "user-7" })
+			}
+			if (method === "GET" && url.includes("?page.limit=")) {
+				requests.push({ url, organizationId: new Headers(init?.headers).get("X-CastAi-Organization-Id") })
+				return jsonResponse({ items: [wsJson()] })
+			}
+			throw new Error(`unexpected request: ${method} ${url}`)
+		})
+
+		const { code, lines } = await run(
+			["list"],
+			fetch,
+			{},
+			{
+				type: "oauth",
+				access: "sso-token",
+				refresh: "refresh-token",
+				expires: Date.now() + 3_600_000,
+				tokenUrl: "https://identity.example.test/token",
+				clientId: "client-id",
+				orgId: "org-selected",
+			},
+		)
+
+		expect(code).toBe(0)
+		expect(lines.join("")).toContain("bright-oak-otter")
+		expect(requests).toHaveLength(1)
+		const listUrl = requests[0]?.url ?? ""
+		expect(new URL(listUrl).pathname).toContain("/organizations/org-selected/workspaces")
+		expect(new URL(listUrl).searchParams.get("creatorId")).toBe("user-7")
+		expect(requests[0]?.organizationId).toBe("org-selected")
 	})
 
 	it("--all lists the organization without the creatorId filter", async () => {
