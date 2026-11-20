@@ -21,8 +21,9 @@ export type WorkspaceStatus = "active" | "initializing" | "suspended" | "deletin
 export interface Workspace {
 	/** Server id — also the command-line identifier (`workspace get <id>`, `ssh <id>`). */
 	id: string
-	/** First DNS label of the URI — the user-facing name (NOT the server id). */
+	/** First DNS label of the URI — the workspace/SSH alias (NOT the server id). */
 	alias: string
+	/** Human-readable description; the list table prefers non-blank values as its display name. */
 	description: string
 	status: WorkspaceStatus
 	uri?: string

@@ -323,7 +323,7 @@ describe("kimchictl workspace create", () => {
 // ---------------------------------------------------------------- list
 
 describe("kimchictl workspace list", () => {
-	it("renders the table", async () => {
+	it("renders descriptions as names and falls back to aliases", async () => {
 		const fetch = apiFetch([
 			{
 				method: "GET",
@@ -334,7 +334,7 @@ describe("kimchictl workspace list", () => {
 							wsJson(),
 							wsJson({
 								alias: "demo",
-								description: "",
+								description: " \t ",
 								status: "SUSPENDED",
 								createTime: "2025-12-30T00:00:00Z",
 								spec: undefined,
@@ -351,7 +351,7 @@ describe("kimchictl workspace list", () => {
 		const table = lines[0]?.split("\n") ?? []
 		expect(table[0]).toMatch(/^NAME\s+STATUS\s+CLUSTER\s+TEMPLATE\s+AGE\s+CPU\s+RAM\s+PVC\s+URI$/)
 		expect(table[1]).toMatch(
-			/^bright-oak-otter\s+active\s+krep-us\s+-\s+3h\s+2\s+4Gi\s+20Gi\s+bright-oak-otter\.remote\.kimchi\.dev$/,
+			/^api work\s+active\s+krep-us\s+-\s+3h\s+2\s+4Gi\s+20Gi\s+bright-oak-otter\.remote\.kimchi\.dev$/,
 		)
 		expect(table[2]).toMatch(/^demo\s+suspended\s+krep-us\s+-\s+2d\s+-\s+-\s+-\s+demo\.remote\.kimchi\.dev$/)
 		expect(table).toHaveLength(3)
@@ -414,7 +414,7 @@ describe("kimchictl workspace list", () => {
 			}
 			if (method === "GET" && url.includes("?page.limit=")) {
 				requests.push({ url, organizationId: new Headers(init?.headers).get("X-CastAi-Organization-Id") })
-				return jsonResponse({ items: [wsJson()] })
+				return jsonResponse({ items: [wsJson({ description: "" })] })
 			}
 			throw new Error(`unexpected request: ${method} ${url}`)
 		})

@@ -321,7 +321,7 @@ Options:
 
 	const now = deps.now?.() ?? new Date()
 	const rows = workspaces.map((w) => [
-		w.alias,
+		w.description.trim() ? w.description : w.alias,
 		w.status,
 		w.cluster,
 		w.templateName || "-",
