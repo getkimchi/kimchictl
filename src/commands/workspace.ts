@@ -300,7 +300,11 @@ Options:
 	// silently degrade to an unfiltered list.
 	if (!values.all) {
 		const verified = await verifyApiKey(credential.bearer, { fetch: deps.fetch })
-		organizationId = verified.organizationId
+		// Only SSO carries an explicit org choice; an empty persisted choice is absent.
+		organizationId =
+			credential.source === "auth-json-oauth"
+				? credential.organizationId || verified.organizationId
+				: verified.organizationId
 		if (!verified.userId) {
 			throw new RemoteNetworkError(
 				`Missing userId in verify response — cannot list only your workspaces; re-run with --all for the full organization list`,
@@ -317,7 +321,7 @@ Options:
 
 	const now = deps.now?.() ?? new Date()
 	const rows = workspaces.map((w) => [
-		w.alias,
+		w.description.trim() ? w.description : w.alias,
 		w.status,
 		w.cluster,
 		w.templateName || "-",

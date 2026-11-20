@@ -79,13 +79,26 @@ async function run(
 	args: string[],
 	fetch: typeof globalThis.fetch,
 	deps: WorkspaceDeps = {},
+	authEntry: Record<string, unknown> = { type: "api_key", key: "key" },
 ): Promise<{ code: number; lines: string[]; errors: string[] }> {
 	const dir = makeTempDir()
 	stubAgentDirEnv(dir)
-	writeFileSync(join(dir, "auth.json"), JSON.stringify({ "kimchi-dev": { type: "api_key", key: "key" } }))
+	writeFileSync(join(dir, "auth.json"), JSON.stringify({ "kimchi-dev": authEntry }))
 	const { lines, errors } = captureConsole()
 	const code = await guardedWorkspace(args, { color: false, fetch, ...deps })
 	return { code, lines, errors }
+}
+
+function oauthEntry(orgId?: string): Record<string, unknown> {
+	return {
+		type: "oauth",
+		access: "sso-token",
+		refresh: "refresh-token",
+		expires: Date.now() + 3_600_000,
+		tokenUrl: "https://identity.example.test/token",
+		clientId: "client-id",
+		...(orgId === undefined ? {} : { orgId }),
+	}
 }
 
 // ---------------------------------------------------------------- group dispatch
@@ -310,7 +323,7 @@ describe("kimchictl workspace create", () => {
 // ---------------------------------------------------------------- list
 
 describe("kimchictl workspace list", () => {
-	it("renders the table", async () => {
+	it("renders descriptions as names and falls back to aliases", async () => {
 		const fetch = apiFetch([
 			{
 				method: "GET",
@@ -321,7 +334,7 @@ describe("kimchictl workspace list", () => {
 							wsJson(),
 							wsJson({
 								alias: "demo",
-								description: "",
+								description: " \t ",
 								status: "SUSPENDED",
 								createTime: "2025-12-30T00:00:00Z",
 								spec: undefined,
@@ -338,7 +351,7 @@ describe("kimchictl workspace list", () => {
 		const table = lines[0]?.split("\n") ?? []
 		expect(table[0]).toMatch(/^NAME\s+STATUS\s+CLUSTER\s+TEMPLATE\s+AGE\s+CPU\s+RAM\s+PVC\s+URI$/)
 		expect(table[1]).toMatch(
-			/^bright-oak-otter\s+active\s+krep-us\s+-\s+3h\s+2\s+4Gi\s+20Gi\s+bright-oak-otter\.remote\.kimchi\.dev$/,
+			/^api work\s+active\s+krep-us\s+-\s+3h\s+2\s+4Gi\s+20Gi\s+bright-oak-otter\.remote\.kimchi\.dev$/,
 		)
 		expect(table[2]).toMatch(/^demo\s+suspended\s+krep-us\s+-\s+2d\s+-\s+-\s+-\s+demo\.remote\.kimchi\.dev$/)
 		expect(table).toHaveLength(3)
@@ -369,6 +382,52 @@ describe("kimchictl workspace list", () => {
 		const { code } = await run(["list"], fetch)
 
 		expect(code).toBe(0)
+	})
+
+	it.each([
+		{
+			name: "preserves the selected SSO org when verifyKey reports a different org",
+			authEntry: oauthEntry("org-selected"),
+			expectedOrganizationId: "org-selected",
+		},
+		{
+			name: "falls back to verifyKey org when the stored SSO org is missing",
+			authEntry: oauthEntry(),
+			expectedOrganizationId: "org-other",
+		},
+		{
+			name: "falls back to verifyKey org when the stored SSO org is empty",
+			authEntry: oauthEntry(""),
+			expectedOrganizationId: "org-other",
+		},
+		{
+			name: "uses verifyKey org for API keys even with org fields in the stored entry",
+			authEntry: { type: "api_key", key: "key", orgId: "org-stale", organizationId: "org-stale" },
+			expectedOrganizationId: "org-other",
+		},
+	])("$name", async ({ authEntry, expectedOrganizationId }) => {
+		const requests: Array<{ url: string; organizationId: string | null }> = []
+		const fetch = stubFetch(async (url, init) => {
+			const method = init?.method ?? "GET"
+			if (method === "POST" && url.endsWith("workspace-tokens:verifyKey")) {
+				return jsonResponse({ organizationId: "org-other", userId: "user-7" })
+			}
+			if (method === "GET" && url.includes("?page.limit=")) {
+				requests.push({ url, organizationId: new Headers(init?.headers).get("X-CastAi-Organization-Id") })
+				return jsonResponse({ items: [wsJson({ description: "" })] })
+			}
+			throw new Error(`unexpected request: ${method} ${url}`)
+		})
+
+		const { code, lines } = await run(["list"], fetch, {}, authEntry)
+
+		expect(code).toBe(0)
+		expect(lines.join("")).toContain("bright-oak-otter")
+		expect(requests).toHaveLength(1)
+		const listUrl = requests[0]?.url ?? ""
+		expect(new URL(listUrl).pathname).toContain(`/organizations/${expectedOrganizationId}/workspaces`)
+		expect(new URL(listUrl).searchParams.get("creatorId")).toBe("user-7")
+		expect(requests[0]?.organizationId).toBe(expectedOrganizationId)
 	})
 
 	it("--all lists the organization without the creatorId filter", async () => {
